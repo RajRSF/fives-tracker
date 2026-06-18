@@ -1368,7 +1368,7 @@
       setField(name, value) {
         formState[name] = value;
         recomputeFormErrors();
-        render();
+        // No render — see liveApi.setSetupField rationale (mobile keystroke focus loss).
       },
       toggleStarter(pid) {
         const idx = formState.starters.indexOf(pid);
@@ -1485,7 +1485,9 @@
       setSetupField(name, value) {
         liveSetup[name] = value;
         recomputeLiveSetupErrors();
-        render();
+        // No render — re-rendering the form on every keystroke destroys the
+        // focused input on mobile and limits typing to one character per tap.
+        // Errors surface on submit attempt; the DOM already reflects the typed value.
       },
       toggleStarter(pid) {
         const idx = liveSetup.starters.indexOf(pid);
@@ -2289,17 +2291,10 @@
             onInput: (e) => api.setSetupField("opponent", e.target.value)
           })
         ]),
-        el("div", { class: "field-row" }, [
-          el("div", { class: "field" }, [
-            el("label", { for: "lf-date" }, "Date"),
-            el("input", { id: "lf-date", type: "date", value: f.date,
-              onInput: (e) => api.setSetupField("date", e.target.value) })
-          ]),
-          el("div", { class: "field" }, [
-            el("label", { for: "lf-len" }, "Match length (min)"),
-            el("input", { id: "lf-len", type: "number", min: MIN_LENGTH, max: MAX_LENGTH, value: f.matchLength,
-              onInput: (e) => api.setSetupField("matchLength", e.target.value) })
-          ])
+        el("div", { class: "field" }, [
+          el("label", { for: "lf-date" }, "Date"),
+          el("input", { id: "lf-date", type: "date", value: f.date,
+            onInput: (e) => api.setSetupField("date", e.target.value) })
         ])
       ]));
 
