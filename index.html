@@ -913,7 +913,10 @@
     function liveElapsedMs(now) {
       const lm = state.liveMatch;
       if (!lm) return 0;
-      const cap = lm.matchLength * 60 * 1000;
+      // No cap — the clock runs until the coach taps End. Actual duration
+      // is recorded at end-match time. Hard ceiling at MAX_LENGTH minutes
+      // protects against forgotten-running matches blowing up the engine.
+      const cap = MAX_LENGTH * 60 * 1000;
       let ms = lm.elapsedMs;
       if (!lm.paused && lm.lastResumeAt) {
         const t = (typeof now === "number" ? now : Date.now()) - new Date(lm.lastResumeAt).getTime();
@@ -940,7 +943,7 @@
       const lm = state.liveMatch;
       if (!lm) return null;
       const atMs = liveElapsedMs();
-      const minute = Math.max(0, Math.min(lm.matchLength, Math.floor(atMs / 60000)));
+      const minute = Math.max(0, Math.min(MAX_LENGTH, Math.floor(atMs / 60000)));
       // Subs at minute 0 are forced to 1 because the saved-record engine uses 1-based minutes.
       const subMinute = Math.max(1, minute);
       const event = Object.assign(
@@ -1003,10 +1006,16 @@
           stats[e.player].red = true;
         }
       }
+      // Actual played minutes = ceil(elapsed-ms / 60s), clamped to allowed range.
+      // Saving the real duration (not the planned `lm.matchLength`) keeps
+      // minutes-played math honest and removes the upfront "guess the length" step.
+      const actualMs      = Math.max(0, liveElapsedMs());
+      const actualMinutes = clampInt(Math.ceil(actualMs / 60000), MIN_LENGTH, MAX_LENGTH, MIN_LENGTH);
+
       const saved = addMatch({
         opponent:    lm.opponent || "",
         date:        lm.date,
-        matchLength: lm.matchLength,
+        matchLength: actualMinutes,
         ourScore:    ourScore,
         theirScore:  theirScore,
         starters:    lm.starters.slice(),
@@ -2352,8 +2361,9 @@
     function liveMillisecondsByPlayer() {
       const lm = Store.getLive();
       if (!lm) return new Map();
-      const cap = lm.matchLength * 60 * 1000;
-      const elapsedMs = Math.min(cap, Store.liveElapsedMs());
+      // No planned-length cap — the clock runs until end-match.
+      // liveElapsedMs already enforces the MAX_LENGTH hard ceiling.
+      const elapsedMs = Store.liveElapsedMs();
       const subs = lm.events
         .filter(e => e.kind === "sub")
         .map(e => ({ off: e.off, on: e.on, atMs: Number.isFinite(e.atMs) ? e.atMs : (e.subMinute || 0) * 60000 }))
@@ -2384,8 +2394,6 @@
       const lm = Store.getLive();
       if (!lm) return;
       const elapsedMs = Store.liveElapsedMs();
-      const elapsedMin = elapsedMs / 60000;
-      const fullTime = elapsedMin >= lm.matchLength;
 
       // Tally goals from events for the scoreline.
       let ourScore = 0, theirScore = 0;
@@ -2398,8 +2406,7 @@
       const hud = el("section", { class: "live-hud" }, [
         el("div", { class: "opp-line" }, [
           el("span", { class: "opp" }, "vs " + (lm.opponent || "(opponent)")),
-          el("span", { class: "status" }, fullTime ? "Full time"
-            : lm.paused ? "Paused" : "Live")
+          el("span", { class: "status" }, lm.paused ? "Paused" : "Live")
         ]),
         el("div", { class: "scoreline" }, [
           el("div", { class: "side" }, [
@@ -2426,10 +2433,10 @@
         root.appendChild(renderLivePicker(picker, api));
       } else {
         const actions = el("div", { class: "live-actions" }, [
-          el("button", { class: "btn btn-goal-us",   onClick: () => api.beginGoalUs(),   disabled: fullTime }, "⚽ Goal — Us"),
-          el("button", { class: "btn btn-goal-them", onClick: () => api.beginGoalThem(), disabled: fullTime }, "Goal — Them"),
-          el("button", { class: "btn btn-sub",       onClick: () => api.beginSub(),      disabled: fullTime }, "↔ Sub"),
-          el("button", { class: "btn btn-card",      onClick: () => api.beginCard(),     disabled: fullTime }, "🟨 Card")
+          el("button", { class: "btn btn-goal-us",   onClick: () => api.beginGoalUs()   }, "⚽ Goal — Us"),
+          el("button", { class: "btn btn-goal-them", onClick: () => api.beginGoalThem() }, "Goal — Them"),
+          el("button", { class: "btn btn-sub",       onClick: () => api.beginSub()      }, "↔ Sub"),
+          el("button", { class: "btn btn-card",      onClick: () => api.beginCard()     }, "🟨 Card")
         ]);
         root.appendChild(actions);
       }
@@ -2442,7 +2449,7 @@
 
       const subPicking = !!(picker && picker.kind === "sub" && picker.step === "on");
       const preselectedOff = subPicking ? picker.partial.off : null;
-      const directSubsAvailable = !lm.paused && !fullTime;
+      const directSubsAvailable = !lm.paused;
 
       const onPitchCard = el("section", { class: "card" }, [
         el("div", { class: "live-section-title" }, "On the pitch (" + onPitch.size + ")")
