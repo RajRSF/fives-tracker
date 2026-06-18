@@ -1,0 +1,2669 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0a6b2e" />
+<title>Fives Tracker</title>
+<style>
+  /* ---------- Theme ---------- */
+  :root {
+    --pitch:        #0a6b2e;
+    --pitch-dark:   #07501f;
+    --pitch-deep:   #053414;
+    --chalk:        #ffffff;
+    --ink:          #0e1411;
+    --ink-soft:     #2a352f;
+    --paper:        #f5f7f4;
+    --line:         #d8ddd5;
+    --muted:        #6a7a70;
+    --warn:         #c0392b;
+    --warn-bg:      #fdecea;
+    --win:          #138a3f;
+    --draw:         #6a7a70;
+    --loss:         #c0392b;
+    --shadow:       0 1px 2px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
+    --radius:       10px;
+    --radius-sm:    6px;
+    --tap:          44px;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Helvetica Neue", Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.4;
+    -webkit-text-size-adjust: 100%;
+    overflow-x: hidden;
+  }
+  body { min-height: 100vh; }
+  h1, h2, h3 { margin: 0 0 0.5rem; font-weight: 800; letter-spacing: -0.01em; }
+  h1 { font-size: 1.25rem; }
+  h2 { font-size: 1.1rem; }
+  h3 { font-size: 1rem; }
+  p { margin: 0 0 0.5rem; }
+  button { font: inherit; }
+  input, select, textarea, button { font-family: inherit; }
+  .scoreboard { font-variant-numeric: tabular-nums; font-weight: 800; letter-spacing: 0.02em; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ---------- Layout ---------- */
+  header {
+    background: linear-gradient(180deg, var(--pitch) 0%, var(--pitch-dark) 100%);
+    color: var(--chalk);
+    padding: 14px 16px 0;
+    position: sticky; top: 0; z-index: 10;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  .brand {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 12px;
+  }
+  .brand-mark {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: var(--chalk); color: var(--pitch);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 900; font-size: 18px;
+    box-shadow: inset 0 0 0 2px var(--pitch-dark);
+  }
+  .brand h1 { color: var(--chalk); }
+  .tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 0;
+  }
+  .tabs button {
+    flex: 1;
+    min-height: var(--tap);
+    background: transparent;
+    color: rgba(255,255,255,0.75);
+    border: 0;
+    border-bottom: 3px solid transparent;
+    padding: 10px 8px;
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .tabs button.active {
+    color: var(--chalk);
+    border-bottom-color: var(--chalk);
+  }
+  main {
+    padding: 16px;
+    max-width: 720px;
+    margin: 0 auto;
+  }
+  .card {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px;
+    margin-bottom: 12px;
+    box-shadow: var(--shadow);
+  }
+  .row {
+    display: flex; align-items: center; gap: 10px;
+  }
+  .row + .row { margin-top: 8px; }
+  .grow { flex: 1 1 auto; min-width: 0; }
+  .muted { color: var(--muted); font-size: 0.9rem; }
+  .muted.small { font-size: 0.8rem; margin-top: 6px; }
+  .stack > * + * { margin-top: 10px; }
+  .settings-actions { gap: 8px; flex-wrap: wrap; }
+  .settings-actions .btn { flex: 1 1 140px; min-width: 0; }
+
+  /* ---------- Form fields ---------- */
+  label { display: block; font-weight: 600; margin-bottom: 4px; font-size: 0.92rem; }
+  input[type=text], input[type=number], input[type=date], select {
+    width: 100%;
+    min-height: var(--tap);
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: #fff;
+    color: var(--ink);
+    font-size: 16px;
+  }
+  input[type=number] { font-variant-numeric: tabular-nums; }
+  input:focus, select:focus { outline: 2px solid var(--pitch); outline-offset: 1px; }
+  .field { margin-bottom: 10px; }
+  .field-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  }
+
+  /* ---------- Buttons ---------- */
+  .btn {
+    min-height: var(--tap);
+    padding: 10px 14px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--ink);
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 0.95rem;
+  }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary {
+    background: var(--pitch);
+    border-color: var(--pitch-dark);
+    color: var(--chalk);
+  }
+  .btn-primary:disabled { background: var(--muted); border-color: var(--muted); }
+  .btn-danger {
+    background: var(--warn);
+    border-color: #962e22;
+    color: var(--chalk);
+  }
+  .btn-ghost {
+    background: transparent;
+    border-color: transparent;
+    color: var(--pitch);
+  }
+  .btn-block { width: 100%; }
+  .btn-sm { min-height: 36px; padding: 6px 10px; font-size: 0.85rem; }
+
+  /* ---------- Roster ---------- */
+  .player-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: #fff;
+  }
+  .player-row + .player-row { margin-top: 8px; }
+  .player-badge {
+    width: 36px; height: 36px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--pitch); color: var(--chalk);
+    font-weight: 800; font-size: 14px;
+    flex: 0 0 auto;
+  }
+  .player-row input { border: 0; padding: 8px 6px; min-height: var(--tap); }
+  .player-row input:focus { outline: 2px solid var(--pitch); outline-offset: 0; border-radius: 4px; }
+
+  /* ---------- Starter picker ---------- */
+  .picker {
+    display: grid; grid-template-columns: 1fr; gap: 8px;
+  }
+  .pick-row {
+    display: flex; align-items: center; gap: 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+    background: #fff;
+    cursor: pointer;
+    min-height: var(--tap);
+  }
+  .pick-row.starter {
+    background: #eaf6ee;
+    border-color: var(--pitch);
+  }
+  .pick-row .role {
+    font-size: 0.75rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--line);
+    color: var(--ink-soft);
+  }
+  .pick-row.starter .role {
+    background: var(--pitch);
+    color: var(--chalk);
+  }
+  .picker-meta {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 6px;
+    font-weight: 700;
+  }
+  .count-pill {
+    font-variant-numeric: tabular-nums;
+    background: var(--ink-soft);
+    color: var(--chalk);
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 800;
+  }
+  .count-pill.ok { background: var(--pitch); }
+  .count-pill.bad { background: var(--warn); }
+
+  /* ---------- Subs ---------- */
+  .sub-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 90px auto;
+    gap: 6px;
+    align-items: end;
+    padding: 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: #fff;
+  }
+  .sub-row + .sub-row { margin-top: 8px; }
+  .sub-row label { font-size: 0.75rem; margin-bottom: 2px; color: var(--muted); }
+  .sub-row select, .sub-row input { min-height: 40px; }
+  .sub-row .remove {
+    align-self: end;
+    min-height: 40px;
+    width: 40px;
+    padding: 0;
+  }
+  .err {
+    color: var(--warn);
+    background: var(--warn-bg);
+    border: 1px solid #f5b7b1;
+    border-radius: var(--radius-sm);
+    padding: 6px 8px;
+    font-size: 0.85rem;
+    margin-top: 6px;
+  }
+
+  /* ---------- Stats grid ---------- */
+  .stats-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+    background: #fff;
+  }
+  .stats-row + .stats-row { margin-top: 8px; }
+  .stats-row .name { font-weight: 700; }
+  .stats-row .stat-line {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    align-items: end;
+  }
+  .stats-row .toggles {
+    display: flex; gap: 8px; flex-wrap: wrap;
+  }
+  .toggle {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 10px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: #fff;
+    cursor: pointer;
+    user-select: none;
+    min-height: 36px;
+    font-weight: 600;
+    font-size: 0.85rem;
+  }
+  .toggle input { display: none; }
+  .toggle .swatch {
+    width: 14px; height: 18px; border-radius: 2px;
+    border: 1px solid #aaa; background: #f3f3f3;
+  }
+  .toggle.yellow.on { background: #fff8d6; border-color: #d4b400; }
+  .toggle.yellow.on .swatch { background: #f1c40f; border-color: #b58900; }
+  .toggle.red.on { background: #fdecea; border-color: var(--warn); color: var(--warn); }
+  .toggle.red.on .swatch { background: var(--warn); border-color: #962e22; }
+
+  /* ---------- Match list ---------- */
+  .match-card {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 6px 12px;
+    padding: 12px;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    margin-bottom: 10px;
+    cursor: pointer;
+    box-shadow: var(--shadow);
+  }
+  .match-card .opp { font-weight: 800; font-size: 1.05rem; }
+  .match-card .when { color: var(--muted); font-size: 0.85rem; }
+  .match-card .score {
+    font-size: 1.4rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: 900;
+    text-align: right;
+    line-height: 1;
+  }
+  .pill {
+    display: inline-block;
+    font-weight: 800;
+    font-size: 0.75rem;
+    letter-spacing: 0.06em;
+    padding: 3px 10px;
+    border-radius: 999px;
+    color: var(--chalk);
+    text-transform: uppercase;
+  }
+  .pill.W { background: var(--win); }
+  .pill.D { background: var(--draw); }
+  .pill.L { background: var(--loss); }
+
+  /* ---------- Match detail ---------- */
+  .detail-section { margin-top: 14px; }
+  .detail-section h3 { margin-bottom: 6px; }
+  .lineup-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  }
+  .lineup-grid .col h4 {
+    margin: 0 0 4px; font-size: 0.8rem; text-transform: uppercase;
+    color: var(--muted); letter-spacing: 0.06em;
+  }
+  .lineup-grid li { padding: 4px 0; }
+  .lineup-li { display: flex; align-items: center; gap: 8px; }
+  .lineup-li .lineup-name { line-height: 1.2; }
+  ul.clean { list-style: none; padding: 0; margin: 0; }
+  table.dash {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  table.dash th, table.dash td {
+    padding: 10px 8px;
+    text-align: left;
+    font-size: 0.95rem;
+    border-bottom: 1px solid var(--line);
+  }
+  table.dash th {
+    background: var(--pitch);
+    color: var(--chalk);
+    cursor: pointer;
+    user-select: none;
+    font-weight: 800;
+    font-size: 0.78rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    min-height: var(--tap);
+  }
+  table.dash th .arrow { display: inline-block; width: 1em; }
+  table.dash td.num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
+  table.dash th.num { text-align: right; }
+  table.dash tbody tr:last-child td { border-bottom: 0; }
+
+  .empty {
+    text-align: center;
+    padding: 24px 12px;
+    color: var(--muted);
+  }
+
+  /* ---------- Modal ---------- */
+  .modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5);
+    display: flex; align-items: center; justify-content: center;
+    padding: 16px;
+    z-index: 100;
+  }
+  .modal {
+    background: #fff;
+    border-radius: var(--radius);
+    max-width: 360px;
+    width: 100%;
+    padding: 18px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.25);
+  }
+  .modal h3 { margin-bottom: 8px; }
+  .modal .actions {
+    display: flex; gap: 8px; justify-content: flex-end;
+    margin-top: 14px;
+  }
+
+  /* ---------- Score entry inline ---------- */
+  .score-inline {
+    display: grid; grid-template-columns: 1fr 22px 1fr; gap: 8px;
+    align-items: end;
+  }
+  .score-inline .dash {
+    text-align: center;
+    font-size: 1.6rem;
+    font-weight: 900;
+    line-height: var(--tap);
+    color: var(--muted);
+  }
+
+  /* ---------- Live Match ---------- */
+  .live-banner {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--pitch); color: var(--chalk);
+    padding: 12px 14px; border-radius: var(--radius);
+    margin-bottom: 12px; box-shadow: var(--shadow);
+  }
+  .live-banner .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #ff5b5b; box-shadow: 0 0 0 0 rgba(255,91,91,0.7);
+    animation: livepulse 1.4s ease-out infinite;
+  }
+  @keyframes livepulse {
+    0%   { box-shadow: 0 0 0 0 rgba(255,91,91,0.7); }
+    70%  { box-shadow: 0 0 0 10px rgba(255,91,91,0); }
+    100% { box-shadow: 0 0 0 0 rgba(255,91,91,0); }
+  }
+  .live-banner .grow { flex: 1; }
+  .live-banner .muted-on-pitch { color: rgba(255,255,255,0.78); font-size: 0.85rem; }
+  .live-banner .btn { background: var(--chalk); color: var(--pitch); border: 0; min-height: var(--tap); padding: 0 14px; border-radius: var(--radius-sm); font-weight: 700; }
+
+  .live-hud {
+    background: linear-gradient(180deg, var(--pitch) 0%, var(--pitch-dark) 100%);
+    color: var(--chalk);
+    padding: 14px;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    margin-bottom: 12px;
+  }
+  .live-hud .opp-line { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+  .live-hud .opp-line .opp { font-weight: 700; font-size: 1.05rem; letter-spacing: 0.01em; opacity: 0.95; }
+  .live-hud .opp-line .status { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.85; }
+  .live-hud .scoreline {
+    display: grid; grid-template-columns: 1fr auto 1fr;
+    align-items: center; gap: 8px;
+    margin: 6px 0 10px;
+  }
+  .live-hud .scoreline .side { text-align: center; }
+  .live-hud .scoreline .side .label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.12em; opacity: 0.85; }
+  .live-hud .scoreline .side .val { font-variant-numeric: tabular-nums; font-weight: 900; font-size: 2.6rem; line-height: 1; }
+  .live-hud .scoreline .clock { font-variant-numeric: tabular-nums; font-weight: 900; font-size: 2rem; padding: 0 6px; }
+  .live-hud .clock-row { display: flex; gap: 8px; }
+  .live-hud .clock-row .btn { flex: 1; min-height: var(--tap); border-radius: var(--radius-sm); font-weight: 700; border: 0; }
+  .live-hud .btn-pause   { background: rgba(255,255,255,0.15); color: var(--chalk); }
+  .live-hud .btn-pause:hover { background: rgba(255,255,255,0.22); }
+  .live-hud .btn-resume  { background: var(--chalk); color: var(--pitch); }
+  .live-hud .btn-end     { background: var(--warn); color: var(--chalk); }
+
+  .live-actions {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;
+    margin-bottom: 12px;
+  }
+  .live-actions .btn { min-height: 52px; border-radius: var(--radius-sm); font-weight: 700; }
+  .live-actions .btn-goal-us   { background: var(--win); color: var(--chalk); border: 0; }
+  .live-actions .btn-goal-them { background: var(--loss); color: var(--chalk); border: 0; }
+  .live-actions .btn-sub       { background: var(--ink); color: var(--chalk); border: 0; }
+  .live-actions .btn-card      { background: #b88600; color: var(--chalk); border: 0; }
+
+  .live-section-title { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin: 4px 0 8px; }
+
+  .live-roster-grid { display: grid; grid-template-columns: 1fr; gap: 6px; }
+  .live-row {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--paper); border: 1px solid var(--line);
+    border-radius: var(--radius-sm); padding: 8px 10px;
+    min-height: var(--tap);
+  }
+  .live-row.on-pitch { background: #eaf6ee; border-color: #bcdcc6; }
+  .live-row.on-bench { background: #f5f7f4; }
+  .live-row .pos {
+    width: 28px; height: 28px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--pitch); color: var(--chalk);
+    font-weight: 800; font-size: 0.78rem;
+  }
+  .live-row.on-bench .pos { background: var(--muted); }
+  .pinitial {
+    width: 30px; height: 30px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--ink-soft); color: var(--chalk);
+    font-weight: 800; font-size: 0.78rem;
+    flex: 0 0 auto;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+  }
+  .pinitial.starter { background: var(--pitch); }
+  .pinitial.bench   { background: var(--muted); }
+  .pinitial.sm { width: 26px; height: 26px; font-size: 0.7rem; }
+  .live-row .pname { flex: 1; font-weight: 600; }
+  .live-row .ptime { font-variant-numeric: tabular-nums; font-weight: 800; min-width: 56px; text-align: right; }
+  .live-row .pmeta { display: flex; gap: 4px; }
+  .live-row .pchip {
+    font-size: 0.7rem; padding: 2px 6px; border-radius: 999px;
+    background: var(--ink); color: var(--chalk); font-weight: 700;
+  }
+  .live-row .pchip.goal   { background: var(--win); }
+  .live-row .pchip.assist { background: var(--pitch-dark); }
+  .live-row .pchip.yellow { background: #e6b800; color: var(--ink); }
+  .live-row .pchip.red    { background: var(--loss); }
+
+  .live-row.tappable { cursor: pointer; }
+  .live-row.tappable:active { transform: scale(0.99); }
+  .live-row.preselected { outline: 2px solid var(--warn); outline-offset: -2px; }
+  .live-row.armed { background: #fff8e1; border-color: #e6c66a; }
+  .live-hint { margin: -4px 0 8px; font-size: 0.85rem; }
+  .sub-toast {
+    position: sticky; bottom: 12px;
+    margin-top: 16px;
+    display: flex; align-items: center; gap: 12px;
+    background: var(--ink); color: var(--chalk);
+    padding: 10px 14px; border-radius: var(--radius-sm);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+    z-index: 5;
+  }
+  .sub-toast-text { flex: 1; font-weight: 600; }
+  .sub-toast-undo {
+    background: transparent; color: var(--chalk);
+    border: 1px solid var(--chalk);
+    border-radius: 999px; min-height: 32px; padding: 4px 14px;
+    font-weight: 800;
+  }
+
+  .live-events { display: flex; flex-direction: column; gap: 4px; max-height: 200px; overflow-y: auto; }
+  .live-event {
+    display: flex; gap: 8px; align-items: baseline;
+    font-size: 0.92rem; padding: 6px 8px; border-radius: var(--radius-sm);
+    background: var(--paper); border-left: 3px solid var(--line);
+  }
+  .live-event.kind-goalUs   { border-left-color: var(--win); }
+  .live-event.kind-goalThem { border-left-color: var(--loss); }
+  .live-event.kind-sub      { border-left-color: var(--ink); }
+  .live-event.kind-yellow   { border-left-color: #e6b800; }
+  .live-event.kind-red      { border-left-color: var(--loss); }
+  .live-event .e-time { font-variant-numeric: tabular-nums; font-weight: 800; min-width: 44px; }
+  .live-event .e-text { flex: 1; }
+  .live-event .e-undo {
+    background: transparent; border: 1px solid var(--line); color: var(--muted);
+    border-radius: 999px; padding: 2px 8px; font-size: 0.78rem; cursor: pointer;
+  }
+
+  .picker.live-picker .pick-row { background: var(--paper); }
+  .picker.live-picker .pick-row.disabled { opacity: 0.4; pointer-events: none; }
+
+  details.past-match-disclosure { background: var(--paper); border: 1px dashed var(--line); border-radius: var(--radius-sm); padding: 8px 12px; }
+  details.past-match-disclosure summary { cursor: pointer; font-weight: 600; color: var(--muted); list-style: none; min-height: var(--tap); display: flex; align-items: center; }
+  details.past-match-disclosure summary::-webkit-details-marker { display: none; }
+  details.past-match-disclosure[open] summary { color: var(--ink); margin-bottom: 8px; }
+
+  /* ---------- Responsive ---------- */
+  @media (min-width: 480px) {
+    .picker { grid-template-columns: 1fr 1fr; }
+    .stats-row { grid-template-columns: 1.4fr 2fr; align-items: center; }
+    .live-actions { grid-template-columns: repeat(4, 1fr); }
+  }
+  @media (min-width: 600px) {
+    .lineup-grid { grid-template-columns: 1fr 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="brand-mark">5</span>
+    <h1>Fives Tracker</h1>
+  </div>
+  <nav class="tabs" id="tabs" role="tablist">
+    <button data-tab="roster"    role="tab">Roster</button>
+    <button data-tab="matches"   role="tab">Matches</button>
+    <button data-tab="dashboard" role="tab">Dashboard</button>
+  </nav>
+</header>
+
+<main id="view"></main>
+
+<div id="modal-root"></div>
+
+<script>
+"use strict";
+/* =========================================================================
+ * Fives Tracker — single-file vanilla app
+ * Persistence: localStorage key "fivesTracker.v1"
+ * ========================================================================= */
+
+(function () {
+  /* -------------------------- Constants -------------------------------- */
+  const STORAGE_KEY     = "fivesTracker.v1";
+  const SCHEMA_VERSION  = 1;
+  const SQUAD_SIZE      = 8;
+  const STARTERS_COUNT  = 5;
+  const DEFAULT_LENGTH  = 40;
+  const MIN_LENGTH      = 10;
+  const MAX_LENGTH      = 90;
+
+  /* -------------------------- Utilities -------------------------------- */
+  const $  = (sel, root) => (root || document).querySelector(sel);
+  const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
+
+  function el(tag, attrs, children) {
+    const node = document.createElement(tag);
+    if (attrs) {
+      for (const k of Object.keys(attrs)) {
+        const v = attrs[k];
+        if (v === null || v === undefined || v === false) continue;
+        if (k === "class") node.className = v;
+        else if (k === "dataset" && typeof v === "object") {
+          for (const dk of Object.keys(v)) node.dataset[dk] = v[dk];
+        } else if (k.startsWith("on") && typeof v === "function") {
+          node.addEventListener(k.slice(2).toLowerCase(), v);
+        } else if (k === "html") {
+          node.innerHTML = v;
+        } else if (k in node && typeof node[k] !== "object") {
+          try { node[k] = v; } catch { node.setAttribute(k, v); }
+        } else {
+          node.setAttribute(k, v);
+        }
+      }
+    }
+    appendChildren(node, children);
+    return node;
+  }
+  function appendChildren(node, children) {
+    if (children === null || children === undefined || children === false) return;
+    if (Array.isArray(children)) {
+      for (const c of children) appendChildren(node, c);
+      return;
+    }
+    if (typeof children === "string" || typeof children === "number") {
+      node.appendChild(document.createTextNode(String(children)));
+      return;
+    }
+    if (children instanceof Node) {
+      node.appendChild(children);
+    }
+  }
+  function todayISO() {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+  function fmtDate(iso) {
+    if (!iso) return "";
+    // Avoid TZ shifts: parse pieces directly.
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+    if (!m) return iso;
+    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    return `${parseInt(m[3],10)} ${months[parseInt(m[2],10)-1]} ${m[1]}`;
+  }
+  function uid(prefix) {
+    return prefix + "-" + Math.random().toString(36).slice(2, 9) + "-" + Date.now().toString(36);
+  }
+  function initialsOf(name) {
+    if (!name) return "?";
+    const parts = String(name).trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return "?";
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  function clampInt(n, lo, hi, fallback) {
+    n = parseInt(n, 10);
+    if (!Number.isFinite(n)) return fallback;
+    if (n < lo) return lo;
+    if (n > hi) return hi;
+    return n;
+  }
+  function deepClone(obj) {
+    return JSON.parse(JSON.stringify(obj));
+  }
+
+  /* =========================================================================
+   * Store — localStorage persistence + state mutations
+   * ======================================================================= */
+  const Store = (function () {
+    let state = null;
+    const listeners = new Set();
+
+    function defaultPlayers() {
+      const out = [];
+      for (let i = 1; i <= SQUAD_SIZE; i++) {
+        out.push({ id: "p" + i, name: "Player " + i });
+      }
+      return out;
+    }
+    function defaultState() {
+      return {
+        schemaVersion: SCHEMA_VERSION,
+        players: defaultPlayers(),
+        matches: [],
+        liveMatch: null,
+        settings: { defaultMatchLength: DEFAULT_LENGTH }
+      };
+    }
+
+    function migrate(raw) {
+      // Forward-only migration. Unknown / missing schemaVersion → treat as v1.
+      const s = raw && typeof raw === "object" ? raw : {};
+      const out = defaultState();
+      out.schemaVersion = SCHEMA_VERSION;
+
+      // Players: enforce exactly SQUAD_SIZE; preserve IDs/names where possible.
+      const provided = Array.isArray(s.players) ? s.players : [];
+      const players = [];
+      for (let i = 0; i < SQUAD_SIZE; i++) {
+        const p = provided[i];
+        if (p && typeof p === "object" && typeof p.id === "string") {
+          players.push({
+            id: p.id,
+            name: typeof p.name === "string" && p.name.trim() ? p.name : "Player " + (i + 1)
+          });
+        } else {
+          players.push({ id: "p" + (i + 1), name: "Player " + (i + 1) });
+        }
+      }
+      out.players = players;
+
+      // Matches: keep only well-formed entries.
+      const matches = Array.isArray(s.matches) ? s.matches : [];
+      const validIds = new Set(players.map(p => p.id));
+      out.matches = matches.filter(m => isValidMatch(m, validIds))
+                           .map(normaliseMatch);
+
+      // Settings.
+      if (s.settings && typeof s.settings === "object") {
+        const dml = clampInt(s.settings.defaultMatchLength, MIN_LENGTH, MAX_LENGTH, DEFAULT_LENGTH);
+        out.settings.defaultMatchLength = dml;
+      }
+
+      // Live match (added in v1.1, additive — absent on older blobs is fine).
+      out.liveMatch = sanitiseLive(s.liveMatch, validIds);
+      return out;
+    }
+
+    function sanitiseLive(lm, validIds) {
+      if (!lm || typeof lm !== "object") return null;
+      const starters = Array.isArray(lm.starters) ? lm.starters.filter(id => validIds.has(id)) : [];
+      if (starters.length !== STARTERS_COUNT) return null;
+      const matchLength = clampInt(lm.matchLength, MIN_LENGTH, MAX_LENGTH, DEFAULT_LENGTH);
+      const startedAt   = typeof lm.startedAt === "string" ? lm.startedAt : new Date().toISOString();
+      const opponent    = typeof lm.opponent === "string" ? lm.opponent : "";
+      const date        = typeof lm.date === "string" ? lm.date : todayISO();
+      const events      = Array.isArray(lm.events) ? lm.events.filter(e => e && typeof e === "object") : [];
+      const elapsedMs   = Number.isFinite(lm.elapsedMs) ? Math.max(0, lm.elapsedMs) : 0;
+      const lastResumeAt = (lm.lastResumeAt === null || lm.lastResumeAt === undefined)
+        ? null
+        : (typeof lm.lastResumeAt === "string" ? lm.lastResumeAt : null);
+      const paused = !!lm.paused;
+      return {
+        opponent, date, matchLength,
+        starters: starters.slice(),
+        startedAt,
+        elapsedMs,
+        lastResumeAt,
+        paused,
+        events
+      };
+    }
+
+    function isValidMatch(m, validIds) {
+      if (!m || typeof m !== "object") return false;
+      if (typeof m.id !== "string") return false;
+      if (typeof m.opponent !== "string") return false;
+      if (typeof m.date !== "string") return false;
+      if (!Array.isArray(m.starters) || m.starters.length !== STARTERS_COUNT) return false;
+      for (const id of m.starters) if (!validIds.has(id)) return false;
+      if (!Number.isFinite(m.matchLength)) return false;
+      return true;
+    }
+    function normaliseMatch(m) {
+      const subs = Array.isArray(m.subs) ? m.subs.map(s => ({
+        off:    String(s.off),
+        on:     String(s.on),
+        minute: clampInt(s.minute, 1, m.matchLength || MAX_LENGTH, 1)
+      })) : [];
+      const stats = (m.stats && typeof m.stats === "object") ? m.stats : {};
+      const cleanStats = {};
+      for (const pid of Object.keys(stats)) {
+        const s = stats[pid] || {};
+        cleanStats[pid] = {
+          goals:   clampInt(s.goals, 0, 999, 0),
+          assists: clampInt(s.assists, 0, 999, 0),
+          yellow:  !!s.yellow,
+          red:     !!s.red
+        };
+      }
+      return {
+        id:           m.id,
+        opponent:     m.opponent,
+        date:         m.date,
+        matchLength:  clampInt(m.matchLength, MIN_LENGTH, MAX_LENGTH, DEFAULT_LENGTH),
+        ourScore:     clampInt(m.ourScore, 0, 999, 0),
+        theirScore:   clampInt(m.theirScore, 0, 999, 0),
+        starters:     m.starters.slice(),
+        subs:         subs,
+        stats:        cleanStats,
+        createdAt:    typeof m.createdAt === "string" ? m.createdAt : new Date().toISOString()
+      };
+    }
+
+    function load() {
+      let raw = null;
+      try {
+        const txt = localStorage.getItem(STORAGE_KEY);
+        if (txt) raw = JSON.parse(txt);
+      } catch (e) {
+        // Corrupt blob — fall through to defaults; never crash.
+        console.warn("Fives Tracker: failed to parse stored state, resetting.", e);
+        raw = null;
+      }
+      state = raw ? migrate(raw) : defaultState();
+      persist();
+    }
+    function persist() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      } catch (e) {
+        console.warn("Fives Tracker: localStorage write failed.", e);
+      }
+    }
+    function notify() {
+      for (const fn of listeners) {
+        try { fn(state); } catch (e) { console.error(e); }
+      }
+    }
+
+    function getState() { return state; }
+    function getPlayer(id) { return state.players.find(p => p.id === id) || null; }
+    function playerName(id) {
+      const p = getPlayer(id);
+      return p ? p.name : "(unknown)";
+    }
+
+    function updatePlayerName(id, name) {
+      const p = getPlayer(id);
+      if (!p) return;
+      const trimmed = (name || "").trim();
+      p.name = trimmed || p.name;
+      persist();
+      notify();
+    }
+    function addMatch(match) {
+      const m = normaliseMatch(Object.assign({ id: uid("m"), createdAt: new Date().toISOString() }, match));
+      state.matches.push(m);
+      persist();
+      notify();
+      return m;
+    }
+    function deleteMatch(id) {
+      const before = state.matches.length;
+      state.matches = state.matches.filter(m => m.id !== id);
+      if (state.matches.length !== before) {
+        persist();
+        notify();
+      }
+    }
+    function subscribe(fn) {
+      listeners.add(fn);
+      return () => listeners.delete(fn);
+    }
+
+    /* ---------- Live match ---------- */
+    function startLiveMatch({ opponent, date, matchLength, starters }) {
+      if (!Array.isArray(starters) || starters.length !== STARTERS_COUNT) {
+        throw new Error("startLiveMatch: must provide " + STARTERS_COUNT + " starters");
+      }
+      const validIds = new Set(state.players.map(p => p.id));
+      for (const id of starters) if (!validIds.has(id)) throw new Error("startLiveMatch: unknown player id " + id);
+      state.liveMatch = {
+        opponent: (opponent || "").trim(),
+        date: date || todayISO(),
+        matchLength: clampInt(matchLength, MIN_LENGTH, MAX_LENGTH, DEFAULT_LENGTH),
+        starters: starters.slice(),
+        startedAt: new Date().toISOString(),
+        elapsedMs: 0,
+        lastResumeAt: new Date().toISOString(),
+        paused: false,
+        events: []
+      };
+      persist();
+      notify();
+    }
+    function getLive() { return state.liveMatch; }
+    function liveElapsedMs(now) {
+      const lm = state.liveMatch;
+      if (!lm) return 0;
+      const cap = lm.matchLength * 60 * 1000;
+      let ms = lm.elapsedMs;
+      if (!lm.paused && lm.lastResumeAt) {
+        const t = (typeof now === "number" ? now : Date.now()) - new Date(lm.lastResumeAt).getTime();
+        ms += Math.max(0, t);
+      }
+      return Math.min(cap, Math.max(0, ms));
+    }
+    function pauseLive() {
+      const lm = state.liveMatch;
+      if (!lm || lm.paused) return;
+      lm.elapsedMs = liveElapsedMs();
+      lm.paused = true;
+      lm.lastResumeAt = null;
+      persist(); notify();
+    }
+    function resumeLive() {
+      const lm = state.liveMatch;
+      if (!lm || !lm.paused) return;
+      lm.paused = false;
+      lm.lastResumeAt = new Date().toISOString();
+      persist(); notify();
+    }
+    function appendLiveEvent(ev) {
+      const lm = state.liveMatch;
+      if (!lm) return null;
+      const atMs = liveElapsedMs();
+      const minute = Math.max(0, Math.min(lm.matchLength, Math.floor(atMs / 60000)));
+      // Subs at minute 0 are forced to 1 because the saved-record engine uses 1-based minutes.
+      const subMinute = Math.max(1, minute);
+      const event = Object.assign(
+        { id: uid("e"), at: new Date().toISOString(), atMs, minute, subMinute },
+        ev
+      );
+      lm.events.push(event);
+      persist(); notify();
+      return event;
+    }
+    function removeLiveEvent(id) {
+      const lm = state.liveMatch;
+      if (!lm) return;
+      const before = lm.events.length;
+      lm.events = lm.events.filter(e => e.id !== id);
+      if (lm.events.length !== before) { persist(); notify(); }
+    }
+    function liveOnPitch() {
+      const lm = state.liveMatch;
+      if (!lm) return new Set();
+      const onPitch = new Set(lm.starters);
+      const subs = lm.events.filter(e => e.kind === "sub").slice().sort((a, b) => a.subMinute - b.subMinute);
+      for (const s of subs) {
+        if (onPitch.has(s.off)) onPitch.delete(s.off);
+        onPitch.add(s.on);
+      }
+      return onPitch;
+    }
+    function cancelLiveMatch() {
+      state.liveMatch = null;
+      persist(); notify();
+    }
+    /**
+     * Convert the live match to a saved match record and clear the live slot.
+     * Returns the saved match.
+     */
+    function endLiveMatch() {
+      const lm = state.liveMatch;
+      if (!lm) return null;
+      const subs = lm.events.filter(e => e.kind === "sub").map(e => ({
+        off: e.off, on: e.on, minute: e.subMinute
+      })).sort((a, b) => a.minute - b.minute);
+
+      let ourScore = 0, theirScore = 0;
+      const stats = {};
+      const appeared = new Set(lm.starters);
+      for (const s of subs) appeared.add(s.on);
+      for (const pid of appeared) stats[pid] = { goals: 0, assists: 0, yellow: false, red: false };
+
+      for (const e of lm.events) {
+        if (e.kind === "goalUs") {
+          ourScore++;
+          if (e.scorer && stats[e.scorer]) stats[e.scorer].goals++;
+          if (e.assist && stats[e.assist]) stats[e.assist].assists++;
+        } else if (e.kind === "goalThem") {
+          theirScore++;
+        } else if (e.kind === "yellow" && e.player && stats[e.player]) {
+          stats[e.player].yellow = true;
+        } else if (e.kind === "red" && e.player && stats[e.player]) {
+          stats[e.player].red = true;
+        }
+      }
+      const saved = addMatch({
+        opponent:    lm.opponent || "",
+        date:        lm.date,
+        matchLength: lm.matchLength,
+        ourScore:    ourScore,
+        theirScore:  theirScore,
+        starters:    lm.starters.slice(),
+        subs:        subs,
+        stats:       stats
+      });
+      state.liveMatch = null;
+      persist(); notify();
+      return saved;
+    }
+
+    function exportState() {
+      // Deep clone via the same JSON path the persister uses, so what you
+      // export is exactly what survives a save/load round-trip.
+      return {
+        format:        "fives-tracker",
+        schemaVersion: SCHEMA_VERSION,
+        exportedAt:    new Date().toISOString(),
+        state:         JSON.parse(JSON.stringify(state))
+      };
+    }
+    function importState(raw) {
+      // Accept either a wrapped export envelope or a bare state blob.
+      const candidate = (raw && typeof raw === "object" && raw.state && typeof raw.state === "object")
+        ? raw.state
+        : raw;
+      const next = migrate(candidate);
+      state = next;
+      persist();
+      notify();
+      return summariseState(next);
+    }
+    function summariseState(s) {
+      return {
+        players: s.players.length,
+        matches: s.matches.length,
+        hasLive: !!s.liveMatch
+      };
+    }
+
+    return {
+      load, getState, getPlayer, playerName,
+      updatePlayerName, addMatch, deleteMatch, subscribe,
+      // live
+      startLiveMatch, getLive, liveElapsedMs, pauseLive, resumeLive,
+      appendLiveEvent, removeLiveEvent, liveOnPitch,
+      endLiveMatch, cancelLiveMatch,
+      // durability
+      exportState, importState,
+      // for tests / introspection
+      _defaultState: defaultState, _migrate: migrate
+    };
+  })();
+
+  /* =========================================================================
+   * MinutesEngine — pure functions
+   * ======================================================================= */
+  const MinutesEngine = (function () {
+    /**
+     * computeMinutesByPlayer
+     * @param {string[]} starters     — exactly STARTERS_COUNT player IDs on pitch at minute 0
+     * @param {{off:string,on:string,minute:number}[]} subs
+     * @param {number} matchLength
+     * @returns {Map<string,number>}
+     */
+    function computeMinutesByPlayer(starters, subs, matchLength) {
+      const minutes = new Map();
+      const stintStart = new Map();           // pid → minute when current stint started
+      // Initialise starter stints.
+      for (const pid of starters) {
+        stintStart.set(pid, 0);
+        if (!minutes.has(pid)) minutes.set(pid, 0);
+      }
+      // Defensive copy + sort by minute ascending; stable for equal minutes.
+      const ordered = (subs || []).slice().sort((a, b) => a.minute - b.minute);
+      for (const s of ordered) {
+        // Close OFF player's stint at s.minute (if open).
+        if (stintStart.has(s.off)) {
+          const start = stintStart.get(s.off);
+          const delta = Math.max(0, s.minute - start);
+          minutes.set(s.off, (minutes.get(s.off) || 0) + delta);
+          stintStart.delete(s.off);
+        }
+        // Open ON player's stint at s.minute.
+        stintStart.set(s.on, s.minute);
+        if (!minutes.has(s.on)) minutes.set(s.on, 0);
+      }
+      // Close any still-open stints at full time.
+      for (const [pid, start] of stintStart.entries()) {
+        const delta = Math.max(0, matchLength - start);
+        minutes.set(pid, (minutes.get(pid) || 0) + delta);
+      }
+      return minutes;
+    }
+
+    /**
+     * Set of player IDs who appeared in a match (started OR subbed on).
+     */
+    function summariseAppearances(match) {
+      const appeared = new Set(match.starters);
+      for (const s of match.subs || []) appeared.add(s.on);
+      return appeared;
+    }
+
+    return { computeMinutesByPlayer, summariseAppearances };
+  })();
+
+  /* =========================================================================
+   * App controller — tabs, ephemeral form state, render dispatch
+   * ======================================================================= */
+  const App = (function () {
+    const view = $("#view");
+    const tabs = $("#tabs");
+    let currentTab = "roster";
+
+    // Match-form ephemeral state (lives across re-renders inside the form session).
+    let formState = null;
+    function newFormState() {
+      const s = Store.getState();
+      return {
+        opponent:     "",
+        date:         todayISO(),
+        matchLength:  s.settings.defaultMatchLength || DEFAULT_LENGTH,
+        ourScore:     "",
+        theirScore:   "",
+        starters:     [],   // selected starter IDs
+        subs:         [],   // {off, on, minute, _key}
+        stats:        {},   // playerId → {goals, assists, yellow, red}
+        showForm:     false,
+        errors:       []
+      };
+    }
+
+    // Detail view state
+    let openMatchId = null;
+
+    // Dashboard sort state
+    let dashSort = { col: "minutes", dir: "desc" };
+
+    // Live setup form state (when no live match exists yet but user clicked "Start Live").
+    let liveSetup = null;
+    function newLiveSetup() {
+      const s = Store.getState();
+      return {
+        opponent:    "",
+        date:        todayISO(),
+        matchLength: s.settings.defaultMatchLength || DEFAULT_LENGTH,
+        starters:    [],
+        showForm:    false,
+        errors:      []
+      };
+    }
+
+    // Live-action transient state — picking targets for goal/sub/card flows.
+    // shape: { kind: 'goalUs'|'sub'|'card', step, partial:{} }
+    let livePicker = null;
+
+    // Ticker handle for re-rendering the live clock once per second.
+    let liveTickHandle = null;
+
+    // Toast state for the most recent sub — gives the user 5s to undo.
+    let lastSubToast = null;          // { eventId, offId, onId, expiresAt }
+    let lastSubToastHandle = null;    // setTimeout handle
+
+    function clearSubToast() {
+      if (lastSubToastHandle) { clearTimeout(lastSubToastHandle); lastSubToastHandle = null; }
+      lastSubToast = null;
+    }
+    function flashSubToast(eventId, offId, onId) {
+      clearSubToast();
+      lastSubToast = { eventId, offId, onId, expiresAt: Date.now() + 5000 };
+      lastSubToastHandle = setTimeout(() => {
+        lastSubToast = null;
+        lastSubToastHandle = null;
+        render();
+      }, 5000);
+    }
+
+    function setTab(tab) {
+      currentTab = tab;
+      // When leaving Matches view fully, drop detail state but keep form open if user toggled it.
+      if (tab !== "matches") {
+        openMatchId = null;
+        livePicker = null;
+      }
+      $$("#tabs button").forEach(b => {
+        b.classList.toggle("active", b.dataset.tab === tab);
+        b.setAttribute("aria-selected", b.dataset.tab === tab ? "true" : "false");
+      });
+      render();
+    }
+
+    function init() {
+      Store.load();
+      Store.subscribe(() => { manageTicker(); render(); });
+      tabs.addEventListener("click", (e) => {
+        const btn = e.target.closest("button[data-tab]");
+        if (btn) setTab(btn.dataset.tab);
+      });
+      formState = newFormState();
+      liveSetup = newLiveSetup();
+      // Boot directly into Matches/Live if a live match exists; else Roster.
+      if (Store.getLive()) setTab("matches");
+      else setTab("roster");
+      manageTicker();
+    }
+
+    /**
+     * Re-render once per second whenever a live match is running and not paused.
+     * Tick stops on pause/end so we don't burn battery on the sideline.
+     */
+    function manageTicker() {
+      const lm = Store.getLive();
+      const wantTick = !!lm && !lm.paused;
+      if (wantTick && !liveTickHandle) {
+        liveTickHandle = setInterval(() => {
+          if (currentTab === "matches" && !openMatchId) render();
+        }, 1000);
+      } else if (!wantTick && liveTickHandle) {
+        clearInterval(liveTickHandle);
+        liveTickHandle = null;
+      }
+    }
+
+    function render() {
+      view.innerHTML = "";
+      if (currentTab === "roster")    Render.renderRoster(view, dataApi);
+      else if (currentTab === "matches") {
+        if (openMatchId) Render.renderMatchDetail(view, openMatchId, exitDetail, requestDeleteMatch);
+        else if (Store.getLive()) Render.renderLiveMatch(view, livePicker, liveApi);
+        else Render.renderMatches(view, formState, formApi, liveSetup, liveApi);
+      }
+      else if (currentTab === "dashboard") Render.renderDashboard(view, dashSort, setDashSort);
+    }
+
+    function setDashSort(col) {
+      if (dashSort.col === col) {
+        dashSort.dir = dashSort.dir === "asc" ? "desc" : "asc";
+      } else {
+        dashSort.col = col;
+        dashSort.dir = (col === "name") ? "asc" : "desc";
+      }
+      render();
+    }
+
+    function exitDetail() { openMatchId = null; render(); }
+    function openDetail(id) { openMatchId = id; render(); }
+    function requestDeleteMatch(id) {
+      Modal.confirm({
+        title: "Delete this match?",
+        message: "This will permanently remove the match and its stats. Dashboard totals will recompute.",
+        confirmLabel: "Delete",
+        danger: true,
+        onConfirm: () => {
+          Store.deleteMatch(id);
+          openMatchId = null;
+          render();
+        }
+      });
+    }
+
+    /* ---------- Data API: export / import JSON for backup + transfer ---------- */
+    const dataApi = {
+      exportData() {
+        const payload = Store.exportState();
+        const json = JSON.stringify(payload, null, 2);
+        const blob = new Blob([json], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "fives-tracker-" + todayISO() + ".json";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        // Revoke after a tick so the browser can finish the download.
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      },
+      pickImportFile() {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "application/json,.json";
+        input.style.display = "none";
+        input.addEventListener("change", () => {
+          const file = input.files && input.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = () => {
+            let parsed = null;
+            try { parsed = JSON.parse(reader.result); }
+            catch (e) {
+              Modal.confirm({
+                title: "Import failed",
+                message: "That file isn't valid JSON. Pick a different file and try again.",
+                confirmLabel: "OK",
+                onConfirm: () => {}
+              });
+              return;
+            }
+            // Preview what migrate() would accept, so the confirm dialog is honest.
+            let preview = null;
+            try {
+              const candidate = (parsed && typeof parsed === "object" && parsed.state)
+                ? parsed.state : parsed;
+              preview = Store._migrate(candidate);
+            } catch (e) {
+              Modal.confirm({
+                title: "Import failed",
+                message: "Couldn't read that backup. The file may be corrupted.",
+                confirmLabel: "OK",
+                onConfirm: () => {}
+              });
+              return;
+            }
+            const msg =
+              "Replace current data with: " +
+              preview.players.length + " players, " +
+              preview.matches.length + " matches" +
+              (preview.liveMatch ? ", and a live match in progress" : "") +
+              ". This will overwrite everything currently saved.";
+            Modal.confirm({
+              title: "Import backup?",
+              message: msg,
+              confirmLabel: "Replace",
+              danger: true,
+              onConfirm: () => {
+                Store.importState(parsed);
+                openMatchId = null;
+                livePicker = null;
+                clearSubToast();
+                render();
+              }
+            });
+          };
+          reader.readAsText(file);
+        });
+        document.body.appendChild(input);
+        input.click();
+        // The change handler keeps the input alive; remove it after a beat.
+        setTimeout(() => { if (input.parentNode) input.parentNode.removeChild(input); }, 5000);
+      }
+    };
+
+    /* ---------- Form API (passed to Matches view) ---------- */
+    const formApi = {
+      get state() { return formState; },
+      toggleForm() {
+        formState.showForm = !formState.showForm;
+        if (formState.showForm) {
+          // Reset per-open so canceled drafts don't bleed across sessions.
+          formState = newFormState();
+          formState.showForm = true;
+        }
+        render();
+      },
+      cancel() {
+        formState = newFormState();
+        render();
+      },
+      setField(name, value) {
+        formState[name] = value;
+        recomputeFormErrors();
+        render();
+      },
+      toggleStarter(pid) {
+        const idx = formState.starters.indexOf(pid);
+        if (idx >= 0) {
+          formState.starters.splice(idx, 1);
+        } else {
+          if (formState.starters.length >= STARTERS_COUNT) {
+            // Replace oldest selection to keep cap at 5? Spec says count must be 5 to save;
+            // we soft-block adding once 5 chosen.
+            return;
+          }
+          formState.starters.push(pid);
+        }
+        // Drop subs that reference players not on roster (always true) — keep semantic check live.
+        recomputeFormErrors();
+        render();
+      },
+      addSub() {
+        formState.subs.push({ off: "", on: "", minute: "", _key: uid("s") });
+        recomputeFormErrors();
+        render();
+      },
+      updateSub(key, field, value) {
+        const sub = formState.subs.find(s => s._key === key);
+        if (!sub) return;
+        sub[field] = value;
+        recomputeFormErrors();
+        render();
+      },
+      removeSub(key) {
+        formState.subs = formState.subs.filter(s => s._key !== key);
+        recomputeFormErrors();
+        render();
+      },
+      setStat(pid, field, value) {
+        if (!formState.stats[pid]) formState.stats[pid] = { goals: 0, assists: 0, yellow: false, red: false };
+        formState.stats[pid][field] = value;
+        // No need to re-validate — stats don't gate save (besides goals being numeric, validated on submit).
+        render();
+      },
+      submit() {
+        const errs = recomputeFormErrors(/*forSubmit*/ true);
+        if (errs.length > 0) { render(); return; }
+        // Persist match.
+        const f = formState;
+        const matchLength = clampInt(f.matchLength, MIN_LENGTH, MAX_LENGTH, DEFAULT_LENGTH);
+        // Sort subs by minute ascending for stored order (engine sorts defensively too).
+        const subs = f.subs.map(s => ({
+          off: s.off,
+          on:  s.on,
+          minute: clampInt(s.minute, 1, matchLength, 1)
+        })).sort((a, b) => a.minute - b.minute);
+
+        // Build stats only for appearing players, default goals=0, blanks→0.
+        const appeared = new Set(f.starters);
+        for (const s of subs) appeared.add(s.on);
+        const stats = {};
+        for (const pid of appeared) {
+          const raw = f.stats[pid] || {};
+          stats[pid] = {
+            goals:   clampInt(raw.goals, 0, 999, 0),
+            assists: clampInt(raw.assists, 0, 999, 0),
+            yellow:  !!raw.yellow,
+            red:     !!raw.red
+          };
+        }
+        Store.addMatch({
+          opponent:    f.opponent.trim(),
+          date:        f.date,
+          matchLength: matchLength,
+          ourScore:    clampInt(f.ourScore, 0, 999, 0),
+          theirScore:  clampInt(f.theirScore, 0, 999, 0),
+          starters:    f.starters.slice(),
+          subs:        subs,
+          stats:       stats
+        });
+        formState = newFormState();
+        render();
+      },
+      openMatch: openDetail
+    };
+
+    /* ---------- Live Match API ---------- */
+    function recomputeLiveSetupErrors(forStart) {
+      const f = liveSetup;
+      const errs = [];
+      if (forStart) {
+        if (!f.opponent || !f.opponent.trim()) errs.push("Opponent is required.");
+        if (!f.date) errs.push("Date is required.");
+      }
+      const mlNum = parseInt(f.matchLength, 10);
+      if (!Number.isFinite(mlNum) || mlNum < MIN_LENGTH || mlNum > MAX_LENGTH) {
+        errs.push(`Match length must be between ${MIN_LENGTH} and ${MAX_LENGTH}.`);
+      }
+      if (f.starters.length !== STARTERS_COUNT) {
+        errs.push(`Pick exactly ${STARTERS_COUNT} starters (currently ${f.starters.length}).`);
+      }
+      f.errors = errs;
+      return errs;
+    }
+
+    const liveApi = {
+      get setup() { return liveSetup; },
+      get picker() { return livePicker; },
+      toggleSetup() {
+        liveSetup = newLiveSetup();
+        liveSetup.showForm = true;
+        render();
+      },
+      cancelSetup() {
+        liveSetup = newLiveSetup();
+        render();
+      },
+      setSetupField(name, value) {
+        liveSetup[name] = value;
+        recomputeLiveSetupErrors();
+        render();
+      },
+      toggleStarter(pid) {
+        const idx = liveSetup.starters.indexOf(pid);
+        if (idx >= 0) liveSetup.starters.splice(idx, 1);
+        else if (liveSetup.starters.length < STARTERS_COUNT) liveSetup.starters.push(pid);
+        recomputeLiveSetupErrors();
+        render();
+      },
+      start() {
+        const errs = recomputeLiveSetupErrors(true);
+        if (errs.length) { render(); return; }
+        const f = liveSetup;
+        Store.startLiveMatch({
+          opponent:    f.opponent.trim(),
+          date:        f.date,
+          matchLength: clampInt(f.matchLength, MIN_LENGTH, MAX_LENGTH, DEFAULT_LENGTH),
+          starters:    f.starters.slice()
+        });
+        liveSetup = newLiveSetup();
+        livePicker = null;
+        render();
+      },
+      pause:  () => { Store.pauseLive(); },
+      resume: () => { Store.resumeLive(); },
+      endMatch() {
+        Modal.confirm({
+          title: "End match and save?",
+          message: "This stops the clock and saves the match record. Live data will be cleared.",
+          confirmLabel: "End match",
+          danger: false,
+          onConfirm: () => {
+            Store.endLiveMatch();
+            livePicker = null;
+            clearSubToast();
+            render();
+          }
+        });
+      },
+      cancelLive() {
+        Modal.confirm({
+          title: "Cancel this live match?",
+          message: "Discard the in-progress match without saving. This cannot be undone.",
+          confirmLabel: "Discard",
+          danger: true,
+          onConfirm: () => {
+            Store.cancelLiveMatch();
+            livePicker = null;
+            clearSubToast();
+            render();
+          }
+        });
+      },
+      // Action button entry points — open a 1-step picker.
+      beginGoalUs:   () => { livePicker = { kind: "goalUs",   step: "scorer", partial: {} }; render(); },
+      beginGoalThem: () => { Store.appendLiveEvent({ kind: "goalThem" }); },
+      beginSub:      () => { livePicker = { kind: "sub",      step: "off",    partial: {} }; render(); },
+      beginCard:     () => { livePicker = { kind: "card",     step: "player", partial: {} }; render(); },
+      cancelPicker:  () => { livePicker = null; render(); },
+      pickPlayer(pid) {
+        const lm = Store.getLive();
+        if (!lm || !livePicker) return;
+        const onPitch = Store.liveOnPitch();
+        if (livePicker.kind === "goalUs") {
+          if (livePicker.step === "scorer") {
+            if (!onPitch.has(pid)) return; // scorer must be on-pitch
+            livePicker.partial.scorer = pid;
+            livePicker.step = "assist";
+            render();
+          } else if (livePicker.step === "assist") {
+            const assistId = (pid === livePicker.partial.scorer) ? null : pid;
+            Store.appendLiveEvent({ kind: "goalUs", scorer: livePicker.partial.scorer, assist: assistId });
+            livePicker = null;
+            render();
+          }
+        } else if (livePicker.kind === "sub") {
+          if (livePicker.step === "off") {
+            if (!onPitch.has(pid)) return;
+            livePicker.partial.off = pid;
+            livePicker.step = "on";
+            render();
+          } else if (livePicker.step === "on") {
+            if (onPitch.has(pid)) return;       // must be currently on bench
+            if (pid === livePicker.partial.off) return;
+            const offId = livePicker.partial.off;
+            const ev = Store.appendLiveEvent({ kind: "sub", off: offId, on: pid });
+            if (ev) flashSubToast(ev.id, offId, pid);
+            livePicker = null;
+            render();
+          }
+        } else if (livePicker.kind === "card") {
+          if (livePicker.step === "player") {
+            livePicker.partial.player = pid;
+            livePicker.step = "color";
+            render();
+          }
+        }
+      },
+      pickCardColor(color) {
+        if (!livePicker || livePicker.kind !== "card" || livePicker.step !== "color") return;
+        const player = livePicker.partial.player;
+        if (!player) { livePicker = null; render(); return; }
+        Store.appendLiveEvent({ kind: color === "red" ? "red" : "yellow", player });
+        livePicker = null;
+        render();
+      },
+      skipAssist() {
+        if (!livePicker || livePicker.kind !== "goalUs" || livePicker.step !== "assist") return;
+        Store.appendLiveEvent({ kind: "goalUs", scorer: livePicker.partial.scorer, assist: null });
+        livePicker = null;
+        render();
+      },
+      undoEvent(id) {
+        if (lastSubToast && lastSubToast.eventId === id) clearSubToast();
+        Store.removeLiveEvent(id);
+      },
+      // Direct-tap sub: tap an on-pitch row to mark them coming off, then tap a bench row to bring on.
+      directSubFromPitch(pid) {
+        const lm = Store.getLive();
+        if (!lm || lm.paused) return;
+        const onPitch = Store.liveOnPitch();
+        if (!onPitch.has(pid)) return;
+        // If a non-sub picker is open, ignore direct-tap. Otherwise hijack it.
+        if (livePicker && livePicker.kind !== "sub") return;
+        livePicker = { kind: "sub", step: "on", partial: { off: pid } };
+        render();
+      },
+      directSubFromBench(pid) {
+        const lm = Store.getLive();
+        if (!lm || lm.paused) return;
+        if (!livePicker || livePicker.kind !== "sub" || livePicker.step !== "on") return;
+        const offId = livePicker.partial.off;
+        if (!offId || pid === offId) return;
+        const ev = Store.appendLiveEvent({ kind: "sub", off: offId, on: pid });
+        if (ev) flashSubToast(ev.id, offId, pid);
+        livePicker = null;
+        render();
+      },
+      undoLastSub() {
+        if (!lastSubToast) return;
+        const id = lastSubToast.eventId;
+        clearSubToast();
+        Store.removeLiveEvent(id);
+      },
+      get lastSubToast() { return lastSubToast; }
+    };
+
+    /**
+     * Validate the in-progress form. Returns the array of error strings and
+     * also writes them onto formState.errors. When `forSubmit` is true,
+     * fields like opponent/scores are required; otherwise we soft-validate
+     * only structural items so the user gets live feedback while editing.
+     */
+    function recomputeFormErrors(forSubmit) {
+      const f = formState;
+      const errs = [];
+      if (forSubmit) {
+        if (!f.opponent || !f.opponent.trim()) errs.push("Opponent is required.");
+        if (!f.date) errs.push("Date is required.");
+        if (f.ourScore === "" || f.ourScore === null) errs.push("Our score is required.");
+        if (f.theirScore === "" || f.theirScore === null) errs.push("Opponent score is required.");
+        if (f.ourScore !== "" && (parseInt(f.ourScore, 10) < 0 || !Number.isFinite(parseInt(f.ourScore, 10))))
+          errs.push("Our score must be 0 or higher.");
+        if (f.theirScore !== "" && (parseInt(f.theirScore, 10) < 0 || !Number.isFinite(parseInt(f.theirScore, 10))))
+          errs.push("Opponent score must be 0 or higher.");
+      }
+      const mlNum = parseInt(f.matchLength, 10);
+      if (!Number.isFinite(mlNum) || mlNum < MIN_LENGTH || mlNum > MAX_LENGTH) {
+        errs.push(`Match length must be between ${MIN_LENGTH} and ${MAX_LENGTH}.`);
+      }
+      if (f.starters.length !== STARTERS_COUNT) {
+        errs.push(`Pick exactly ${STARTERS_COUNT} starters (currently ${f.starters.length}).`);
+      }
+
+      // Walk subs in minute order. Each sub must be valid against the on-pitch
+      // state established by all prior subs at the same or earlier minute.
+      const ml = Number.isFinite(mlNum) ? mlNum : MAX_LENGTH;
+      const onPitch = new Set(f.starters);
+      const onBench = new Set(Store.getState().players.map(p => p.id).filter(id => !onPitch.has(id)));
+      const ordered = f.subs.slice().sort((a, b) => {
+        const am = parseInt(a.minute, 10), bm = parseInt(b.minute, 10);
+        if (Number.isFinite(am) && Number.isFinite(bm)) return am - bm;
+        if (Number.isFinite(am)) return -1;
+        if (Number.isFinite(bm)) return 1;
+        return 0;
+      });
+      // We tag each sub with a per-sub error message.
+      const subErrors = new Map();
+      for (let i = 0; i < ordered.length; i++) {
+        const s = ordered[i];
+        const m = parseInt(s.minute, 10);
+        const local = [];
+        if (!s.off) local.push("Pick player coming off.");
+        if (!s.on)  local.push("Pick player coming on.");
+        if (!Number.isFinite(m) || m < 1 || m > ml) local.push(`Minute must be 1–${ml}.`);
+        if (s.off && !onPitch.has(s.off)) local.push("Player off must be on the pitch at this point.");
+        if (s.on && !onBench.has(s.on))  local.push("Player on must be on the bench at this point.");
+        if (s.off && s.on && s.off === s.on) local.push("Off and on must differ.");
+        if (local.length) subErrors.set(s._key, local.join(" "));
+        // Apply transition so subsequent subs validate against new state.
+        if (s.off && onPitch.has(s.off)) { onPitch.delete(s.off); onBench.add(s.off); }
+        if (s.on && onBench.has(s.on))   { onBench.delete(s.on); onPitch.add(s.on); }
+      }
+      f._subErrors = subErrors;
+      if (subErrors.size > 0) errs.push("Fix substitution rows highlighted in red.");
+
+      f.errors = errs;
+      return errs;
+    }
+
+    return { init, render, setTab, get liveApi() { return liveApi; } };
+  })();
+
+  /* =========================================================================
+   * Modal — simple confirm dialog
+   * ======================================================================= */
+  const Modal = (function () {
+    const root = $("#modal-root");
+    function close() { root.innerHTML = ""; }
+    function confirm(opts) {
+      close();
+      const backdrop = el("div", { class: "modal-backdrop", onClick: (e) => {
+        if (e.target === backdrop) close();
+      }}, [
+        el("div", { class: "modal", role: "dialog", "aria-modal": "true" }, [
+          el("h3", null, opts.title || "Confirm"),
+          el("p", { class: "muted" }, opts.message || ""),
+          el("div", { class: "actions" }, [
+            el("button", { class: "btn", onClick: close }, "Cancel"),
+            el("button", {
+              class: "btn " + (opts.danger ? "btn-danger" : "btn-primary"),
+              onClick: () => { close(); if (opts.onConfirm) opts.onConfirm(); }
+            }, opts.confirmLabel || "Confirm")
+          ])
+        ])
+      ]);
+      root.appendChild(backdrop);
+    }
+    return { confirm, close };
+  })();
+
+  /* =========================================================================
+   * Render — view modules
+   * ======================================================================= */
+  const Render = (function () {
+
+    /* ---------- Live banner (shown on every non-Matches tab while a live match runs) ---------- */
+    function renderLiveBanner(root) {
+      const lm = Store.getLive();
+      if (!lm) return;
+      const elapsedMs = Store.liveElapsedMs();
+      let ourScore = 0, theirScore = 0;
+      for (const e of lm.events) {
+        if (e.kind === "goalUs") ourScore++;
+        else if (e.kind === "goalThem") theirScore++;
+      }
+      const banner = el("div", { class: "live-banner" }, [
+        el("span", { class: "dot" }),
+        el("div", { class: "grow" }, [
+          el("div", { class: "scoreboard" }, fmtClock(elapsedMs) + "  ·  " + ourScore + " – " + theirScore),
+          el("div", { class: "muted-on-pitch" }, "Live: vs " + (lm.opponent || "(opponent)") + (lm.paused ? " · paused" : ""))
+        ]),
+        el("button", { class: "btn", onClick: () => App.setTab("matches") }, "Open")
+      ]);
+      root.appendChild(banner);
+    }
+
+    /* ---------- Roster ---------- */
+    function renderRoster(root, dataApi) {
+      renderLiveBanner(root);
+      const s = Store.getState();
+      const card = el("section", { class: "card" }, [
+        el("h2", null, "Squad"),
+        el("p", { class: "muted" }, `${SQUAD_SIZE} players. Tap a name to rename — changes save automatically.`)
+      ]);
+      const list = el("div", null);
+      s.players.forEach((p, idx) => {
+        const input = el("input", {
+          type: "text",
+          value: p.name,
+          maxLength: 40,
+          "aria-label": `Player ${idx + 1} name`,
+          onChange: (e) => {
+            Store.updatePlayerName(p.id, e.target.value);
+          },
+          onBlur: (e) => {
+            // Blur also commits in case change didn't fire (e.g., same value).
+            if (e.target.value.trim() && e.target.value.trim() !== p.name) {
+              Store.updatePlayerName(p.id, e.target.value);
+            }
+          },
+          onKeyDown: (e) => { if (e.key === "Enter") e.target.blur(); }
+        });
+        list.appendChild(el("div", { class: "player-row" }, [
+          el("span", { class: "player-badge" }, String(idx + 1)),
+          el("span", { class: "pinitial sm", "aria-hidden": "true" }, initialsOf(p.name)),
+          el("div", { class: "grow" }, input)
+        ]));
+      });
+      card.appendChild(list);
+      root.appendChild(card);
+
+      if (dataApi) {
+        const settingsCard = el("section", { class: "card" }, [
+          el("h2", null, "Backup & restore"),
+          el("p", { class: "muted" },
+            "Data lives only in this browser. Export to keep a copy off-device — bring it back any time with Import.")
+        ]);
+        settingsCard.appendChild(el("div", { class: "row settings-actions" }, [
+          el("button", { class: "btn btn-block", onClick: () => dataApi.exportData() }, "⬇ Export JSON"),
+          el("button", { class: "btn btn-block", onClick: () => dataApi.pickImportFile() }, "⬆ Import JSON")
+        ]));
+        const lastMatch = s.matches.slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))[0];
+        const summary = `${s.matches.length} match${s.matches.length === 1 ? "" : "es"} · ${s.players.length} players` +
+          (lastMatch ? ` · last vs ${lastMatch.opponent}` : "");
+        settingsCard.appendChild(el("p", { class: "muted small" }, summary));
+        root.appendChild(settingsCard);
+      }
+    }
+
+    /* ---------- Matches list + form ---------- */
+    function renderMatches(root, formState, api, liveSetup, liveApi) {
+      const s = Store.getState();
+
+      // Live setup card (when no live match running)
+      const liveCard = el("section", { class: "card" });
+      const liveHeader = el("div", { class: "row" }, [
+        el("div", { class: "grow" }, [
+          el("h2", null, "Live Match"),
+          el("p", { class: "muted" }, liveSetup.showForm
+            ? "Pick 5 starters, then hit Start. The clock runs from minute 0."
+            : "Track a match in real time — clock, goals, subs, and cards as they happen.")
+        ]),
+        el("button", {
+          class: "btn " + (liveSetup.showForm ? "" : "btn-primary"),
+          onClick: () => liveApi.toggleSetup()
+        }, liveSetup.showForm ? "Close" : "+ Start Live Match")
+      ]);
+      liveCard.appendChild(liveHeader);
+      if (liveSetup.showForm) renderLiveSetupForm(liveCard, liveSetup, liveApi);
+      root.appendChild(liveCard);
+
+      // Legacy "Log past match" — collapsed disclosure for backfill.
+      const formCard = el("section", { class: "card" });
+      const det = el("details", { class: "past-match-disclosure" });
+      const sum = el("summary", null, formState.showForm ? "Log past match (open)" : "Log past match (backfill)");
+      det.appendChild(sum);
+      if (formState.showForm) det.setAttribute("open", "");
+      const formHost = el("div", { class: "stack" });
+      formHost.appendChild(el("p", { class: "muted" }, "For matches you didn't track live — enter opponent, score, lineup, subs, and stats."));
+      const toggleRow = el("div", { class: "row" }, [
+        el("div", { class: "grow" }),
+        el("button", {
+          class: "btn " + (formState.showForm ? "" : "btn-primary"),
+          onClick: () => api.toggleForm()
+        }, formState.showForm ? "Close form" : "Open form")
+      ]);
+      formHost.appendChild(toggleRow);
+      if (formState.showForm) renderNewMatchForm(formHost, formState, api);
+      det.appendChild(formHost);
+      formCard.appendChild(det);
+      root.appendChild(formCard);
+
+      // Saved matches
+      const histCard = el("section", { class: "card" }, [
+        el("h2", null, "Saved Matches")
+      ]);
+      if (s.matches.length === 0) {
+        histCard.appendChild(el("p", { class: "empty" }, "No matches yet. Log your first one above."));
+      } else {
+        const sorted = s.matches.slice().sort((a, b) => {
+          // Newest first — by date desc, ties broken by createdAt desc.
+          if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+          return (a.createdAt < b.createdAt) ? 1 : -1;
+        });
+        for (const m of sorted) histCard.appendChild(renderMatchRow(m, api));
+      }
+      root.appendChild(histCard);
+    }
+
+    function resultOf(match) {
+      if (match.ourScore > match.theirScore) return "W";
+      if (match.ourScore < match.theirScore) return "L";
+      return "D";
+    }
+
+    function renderMatchRow(m, api) {
+      const r = resultOf(m);
+      return el("div", {
+        class: "match-card",
+        role: "button",
+        tabindex: "0",
+        onClick: () => api.openMatch(m.id),
+        onKeyDown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); api.openMatch(m.id); } }
+      }, [
+        el("div", null, [
+          el("div", { class: "opp" }, ["vs ", m.opponent || "(no opponent)"]),
+          el("div", { class: "when" }, [fmtDate(m.date), "  ·  ", el("span", { class: "pill " + r }, r)])
+        ]),
+        el("div", { class: "score scoreboard" }, `${m.ourScore} – ${m.theirScore}`)
+      ]);
+    }
+
+    /* ---------- New Match form ---------- */
+    function renderNewMatchForm(root, f, api) {
+      const players = Store.getState().players;
+
+      // Top-line fields
+      root.appendChild(el("div", { class: "stack" }, [
+        el("div", { class: "field" }, [
+          el("label", { for: "f-opp" }, "Opponent"),
+          el("input", {
+            id: "f-opp", type: "text", value: f.opponent, maxLength: 40,
+            placeholder: "e.g. Mt Eden Mavericks",
+            onInput: (e) => api.setField("opponent", e.target.value)
+          })
+        ]),
+        el("div", { class: "field-row" }, [
+          el("div", { class: "field" }, [
+            el("label", { for: "f-date" }, "Date"),
+            el("input", { id: "f-date", type: "date", value: f.date,
+              onInput: (e) => api.setField("date", e.target.value) })
+          ]),
+          el("div", { class: "field" }, [
+            el("label", { for: "f-len" }, `Match length (${MIN_LENGTH}–${MAX_LENGTH} min)`),
+            el("input", {
+              id: "f-len", type: "number", min: MIN_LENGTH, max: MAX_LENGTH, step: 1,
+              value: f.matchLength,
+              onInput: (e) => api.setField("matchLength", e.target.value)
+            })
+          ])
+        ]),
+        el("div", { class: "field" }, [
+          el("label", null, "Score"),
+          el("div", { class: "score-inline" }, [
+            el("input", {
+              type: "number", min: 0, step: 1, value: f.ourScore,
+              "aria-label": "Our score", placeholder: "Us",
+              onInput: (e) => api.setField("ourScore", e.target.value)
+            }),
+            el("div", { class: "dash" }, "–"),
+            el("input", {
+              type: "number", min: 0, step: 1, value: f.theirScore,
+              "aria-label": "Opponent score", placeholder: "Them",
+              onInput: (e) => api.setField("theirScore", e.target.value)
+            })
+          ])
+        ])
+      ]));
+
+      // Starter picker
+      const startersOk = f.starters.length === STARTERS_COUNT;
+      const pickerCard = el("div", { class: "field" }, [
+        el("div", { class: "picker-meta" }, [
+          el("span", null, `Pick ${STARTERS_COUNT} starters`),
+          el("span", { class: "count-pill " + (startersOk ? "ok" : "bad") },
+            `${f.starters.length}/${STARTERS_COUNT}`)
+        ])
+      ]);
+      const picker = el("div", { class: "picker" });
+      players.forEach((p, idx) => {
+        const isStarter = f.starters.includes(p.id);
+        const role = isStarter ? "Starter" : "Bench";
+        picker.appendChild(el("div", {
+          class: "pick-row" + (isStarter ? " starter" : ""),
+          onClick: () => api.toggleStarter(p.id),
+          onKeyDown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); api.toggleStarter(p.id); } },
+          role: "button", tabindex: "0",
+          "aria-pressed": isStarter ? "true" : "false"
+        }, [
+          el("span", { class: "player-badge" }, String(idx + 1)),
+          el("span", { class: "pinitial sm " + (isStarter ? "starter" : "bench"), "aria-hidden": "true" }, initialsOf(p.name)),
+          el("div", { class: "grow" }, p.name),
+          el("span", { class: "role" }, role)
+        ]));
+      });
+      pickerCard.appendChild(picker);
+      root.appendChild(pickerCard);
+
+      // Subs
+      const subsCard = el("div", { class: "field" }, [
+        el("div", { class: "picker-meta" }, [
+          el("span", null, "Substitutions"),
+          el("button", { class: "btn btn-sm", onClick: () => api.addSub() }, "+ Add sub")
+        ]),
+        el("p", { class: "muted" }, "Player off must be on the pitch; player on must be on the bench at that minute. Multiple stints supported.")
+      ]);
+      const subErrors = f._subErrors instanceof Map ? f._subErrors : new Map();
+      if (f.subs.length === 0) {
+        subsCard.appendChild(el("p", { class: "muted" }, "No subs yet."));
+      } else {
+        const subsList = el("div");
+        // Render subs in user's chronological order (sorted by minute) for clarity.
+        const ordered = f.subs.slice().sort((a, b) => {
+          const am = parseInt(a.minute, 10), bm = parseInt(b.minute, 10);
+          if (Number.isFinite(am) && Number.isFinite(bm)) return am - bm;
+          if (Number.isFinite(am)) return -1;
+          if (Number.isFinite(bm)) return 1;
+          return 0;
+        });
+        for (const s of ordered) {
+          const offSel = el("select", {
+            "aria-label": "Player coming off",
+            onChange: (e) => api.updateSub(s._key, "off", e.target.value)
+          }, [
+            el("option", { value: "" }, "— off —"),
+            ...players.map(p => el("option", { value: p.id, selected: s.off === p.id }, p.name))
+          ]);
+          const onSel = el("select", {
+            "aria-label": "Player coming on",
+            onChange: (e) => api.updateSub(s._key, "on", e.target.value)
+          }, [
+            el("option", { value: "" }, "— on —"),
+            ...players.map(p => el("option", { value: p.id, selected: s.on === p.id }, p.name))
+          ]);
+          const minInput = el("input", {
+            type: "number", min: 1, max: f.matchLength || MAX_LENGTH, step: 1,
+            value: s.minute, "aria-label": "Minute",
+            onInput: (e) => api.updateSub(s._key, "minute", e.target.value)
+          });
+          const row = el("div", null, [
+            el("div", { class: "sub-row" }, [
+              el("div", null, [el("label", null, "Off"), offSel]),
+              el("div", null, [el("label", null, "On"), onSel]),
+              el("div", null, [el("label", null, "Min"), minInput]),
+              el("button", {
+                class: "btn btn-sm btn-danger remove",
+                onClick: () => api.removeSub(s._key),
+                "aria-label": "Remove sub"
+              }, "×")
+            ])
+          ]);
+          if (subErrors.has(s._key)) {
+            row.appendChild(el("div", { class: "err" }, subErrors.get(s._key)));
+          }
+          subsList.appendChild(row);
+        }
+        subsCard.appendChild(subsList);
+      }
+      root.appendChild(subsCard);
+
+      // Per-player stats — for everyone who appeared.
+      const appeared = new Set(f.starters);
+      for (const s of f.subs) if (s.on) appeared.add(s.on);
+      const statsCard = el("div", { class: "field" }, [
+        el("div", { class: "picker-meta" }, [el("span", null, "Per-player stats")]),
+        el("p", { class: "muted" }, "Goals required (default 0). Assists optional. Cards optional. Team score is independent of player goals.")
+      ]);
+      if (appeared.size === 0) {
+        statsCard.appendChild(el("p", { class: "muted" }, "No appearances yet — pick starters first."));
+      } else {
+        const list = el("div");
+        const orderedIds = players.map(p => p.id).filter(id => appeared.has(id));
+        for (const pid of orderedIds) {
+          const player = Store.getPlayer(pid);
+          const cur = f.stats[pid] || { goals: 0, assists: 0, yellow: false, red: false };
+          const goalsInput = el("input", {
+            type: "number", min: 0, step: 1, required: true,
+            value: cur.goals, "aria-label": `${player.name} goals`,
+            onInput: (e) => api.setStat(pid, "goals", e.target.value === "" ? 0 : clampInt(e.target.value, 0, 999, 0))
+          });
+          const assistsInput = el("input", {
+            type: "number", min: 0, step: 1,
+            value: cur.assists, "aria-label": `${player.name} assists`, placeholder: "0",
+            onInput: (e) => api.setStat(pid, "assists", e.target.value === "" ? 0 : clampInt(e.target.value, 0, 999, 0))
+          });
+          const yellow = el("label", {
+            class: "toggle yellow" + (cur.yellow ? " on" : ""),
+            "aria-pressed": cur.yellow ? "true" : "false"
+          }, [
+            el("input", { type: "checkbox", checked: cur.yellow,
+              onChange: (e) => api.setStat(pid, "yellow", e.target.checked) }),
+            el("span", { class: "swatch" }), "Yellow"
+          ]);
+          const red = el("label", {
+            class: "toggle red" + (cur.red ? " on" : ""),
+            "aria-pressed": cur.red ? "true" : "false"
+          }, [
+            el("input", { type: "checkbox", checked: cur.red,
+              onChange: (e) => api.setStat(pid, "red", e.target.checked) }),
+            el("span", { class: "swatch" }), "Red"
+          ]);
+          list.appendChild(el("div", { class: "stats-row" }, [
+            el("div", { class: "name" }, player.name),
+            el("div", null, [
+              el("div", { class: "stat-line" }, [
+                el("div", null, [el("label", null, "Goals"), goalsInput]),
+                el("div", null, [el("label", null, "Assists"), assistsInput])
+              ]),
+              el("div", { class: "toggles", style: "margin-top:6px;" }, [yellow, red])
+            ])
+          ]));
+        }
+        statsCard.appendChild(list);
+      }
+      root.appendChild(statsCard);
+
+      // Errors + actions
+      if (f.errors && f.errors.length > 0) {
+        root.appendChild(el("div", { class: "err" }, f.errors.join(" ")));
+      }
+      const canSave = f.errors.length === 0
+        && f.opponent.trim() !== ""
+        && f.date !== ""
+        && f.ourScore !== "" && f.ourScore !== null
+        && f.theirScore !== "" && f.theirScore !== null
+        && f.starters.length === STARTERS_COUNT;
+      root.appendChild(el("div", { class: "row", style: "margin-top:12px;" }, [
+        el("button", { class: "btn btn-primary grow", disabled: !canSave, onClick: () => api.submit() }, "Save Match"),
+        el("button", { class: "btn", onClick: () => api.cancel() }, "Cancel")
+      ]));
+    }
+
+    /* ---------- Match detail ---------- */
+    function renderMatchDetail(root, matchId, onBack, onDelete) {
+      const m = Store.getState().matches.find(x => x.id === matchId);
+      if (!m) {
+        root.appendChild(el("section", { class: "card empty" }, [
+          el("p", null, "Match not found."),
+          el("button", { class: "btn", onClick: onBack }, "Back")
+        ]));
+        return;
+      }
+      const r = resultOf(m);
+      const minutes = MinutesEngine.computeMinutesByPlayer(m.starters, m.subs, m.matchLength);
+      const appeared = MinutesEngine.summariseAppearances(m);
+      const players = Store.getState().players;
+      const starterSet = new Set(m.starters);
+      const benchPlayers = players.filter(p => !starterSet.has(p.id));
+
+      const head = el("section", { class: "card" }, [
+        el("div", { class: "row" }, [
+          el("button", { class: "btn btn-ghost btn-sm", onClick: onBack }, "← Back"),
+          el("div", { class: "grow" }),
+          el("button", { class: "btn btn-danger btn-sm", onClick: () => onDelete(m.id) }, "Delete")
+        ]),
+        el("h2", { style: "margin-top:8px;" }, ["vs ", m.opponent]),
+        el("div", { class: "muted" }, [fmtDate(m.date), "  ·  ", `${m.matchLength} min`]),
+        el("div", { class: "score scoreboard", style: "font-size:2rem; margin-top:6px;" },
+          `${m.ourScore} – ${m.theirScore}`),
+        el("div", { style: "margin-top:4px;" }, el("span", { class: "pill " + r }, r === "W" ? "Win" : (r === "D" ? "Draw" : "Loss")))
+      ]);
+      root.appendChild(head);
+
+      // Lineup
+      const lineup = el("section", { class: "card detail-section" }, [el("h3", null, "Lineup")]);
+      const lineupItem = (name, kind) => el("li", { class: "lineup-li" }, [
+        el("span", { class: "pinitial sm " + kind, "aria-hidden": "true" }, initialsOf(name)),
+        el("span", { class: "lineup-name" }, name)
+      ]);
+      const grid = el("div", { class: "lineup-grid" }, [
+        el("div", { class: "col" }, [
+          el("h4", null, "Starters"),
+          el("ul", { class: "clean" }, m.starters.map(id =>
+            lineupItem(Store.playerName(id), "starter")))
+        ]),
+        el("div", { class: "col" }, [
+          el("h4", null, "Bench"),
+          el("ul", { class: "clean" }, benchPlayers.map(p =>
+            lineupItem(p.name, "bench")))
+        ])
+      ]);
+      lineup.appendChild(grid);
+      root.appendChild(lineup);
+
+      // Subs
+      const subsCard = el("section", { class: "card detail-section" }, [el("h3", null, "Substitutions")]);
+      if (m.subs.length === 0) {
+        subsCard.appendChild(el("p", { class: "muted" }, "No subs."));
+      } else {
+        const list = el("ul", { class: "clean" });
+        for (const s of m.subs.slice().sort((a, b) => a.minute - b.minute)) {
+          list.appendChild(el("li", null,
+            `${s.minute}′  —  ${Store.playerName(s.off)} OFF · ${Store.playerName(s.on)} ON`));
+        }
+        subsCard.appendChild(list);
+      }
+      root.appendChild(subsCard);
+
+      // Per-player stats
+      const statsCard = el("section", { class: "card detail-section" }, [el("h3", null, "Per-player stats")]);
+      const tbl = el("table", { class: "dash" }, [
+        el("thead", null, [
+          el("tr", null, [
+            el("th", null, "Player"),
+            el("th", { class: "num" }, "Min"),
+            el("th", { class: "num" }, "G"),
+            el("th", { class: "num" }, "A"),
+            el("th", null, "Cards")
+          ])
+        ]),
+        el("tbody", null, players
+          .filter(p => appeared.has(p.id))
+          .map(p => {
+            const st = m.stats[p.id] || { goals: 0, assists: 0, yellow: false, red: false };
+            const mins = minutes.get(p.id) || 0;
+            const cards = [];
+            if (st.yellow) cards.push("🟨");
+            if (st.red)    cards.push("🟥");
+            return el("tr", null, [
+              el("td", null, p.name),
+              el("td", { class: "num" }, String(mins)),
+              el("td", { class: "num" }, String(st.goals)),
+              el("td", { class: "num" }, String(st.assists)),
+              el("td", null, cards.join(" ") || "—")
+            ]);
+          }))
+      ]);
+      statsCard.appendChild(tbl);
+      root.appendChild(statsCard);
+
+      // Bench-only (did not appear) summary, for completeness
+      const noShow = players.filter(p => !appeared.has(p.id));
+      if (noShow.length > 0) {
+        const nsCard = el("section", { class: "card detail-section" }, [
+          el("h3", null, "Did not appear"),
+          el("ul", { class: "clean" }, noShow.map(p => el("li", null, p.name)))
+        ]);
+        root.appendChild(nsCard);
+      }
+    }
+
+    /* ---------- Dashboard ---------- */
+    function renderDashboard(root, sort, setSort) {
+      renderLiveBanner(root);
+      const s = Store.getState();
+      const totals = new Map();
+      for (const p of s.players) {
+        totals.set(p.id, { id: p.id, matches: 0, minutes: 0, goals: 0 });
+      }
+      for (const m of s.matches) {
+        const minutes = MinutesEngine.computeMinutesByPlayer(m.starters, m.subs, m.matchLength);
+        const appeared = MinutesEngine.summariseAppearances(m);
+        for (const p of s.players) {
+          const t = totals.get(p.id);
+          const min = minutes.get(p.id) || 0;
+          // matches-played counts iff player accrued >0 minutes (i.e. truly appeared).
+          if (appeared.has(p.id) && min > 0) t.matches += 1;
+          t.minutes += min;
+          const st = m.stats[p.id];
+          if (st) t.goals += (st.goals || 0);
+        }
+      }
+
+      const rows = s.players.map(p => Object.assign({ name: p.name }, totals.get(p.id)));
+
+      const cmp = (a, b) => {
+        const dir = sort.dir === "asc" ? 1 : -1;
+        let av, bv;
+        switch (sort.col) {
+          case "name":    av = a.name.toLowerCase(); bv = b.name.toLowerCase(); break;
+          case "matches": av = a.matches; bv = b.matches; break;
+          case "minutes": av = a.minutes; bv = b.minutes; break;
+          case "goals":   av = a.goals;   bv = b.goals;   break;
+          default:        av = a.minutes; bv = b.minutes;
+        }
+        if (av < bv) return -1 * dir;
+        if (av > bv) return  1 * dir;
+        // Tie-break by name asc for stability
+        return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1;
+      };
+      rows.sort(cmp);
+
+      const arrow = (col) => sort.col === col ? (sort.dir === "asc" ? "▲" : "▼") : "";
+      const card = el("section", { class: "card" }, [
+        el("h2", null, "Player Dashboard"),
+        el("p", { class: "muted" }, "Totals derive live from saved matches. Tap a column to sort.")
+      ]);
+      const tbl = el("table", { class: "dash" }, [
+        el("thead", null, [
+          el("tr", null, [
+            el("th", { onClick: () => setSort("name") },    ["Player ",  el("span", { class: "arrow" }, arrow("name"))]),
+            el("th", { class: "num", onClick: () => setSort("matches") }, [el("span", { class: "arrow" }, arrow("matches")), " MP"]),
+            el("th", { class: "num", onClick: () => setSort("minutes") }, [el("span", { class: "arrow" }, arrow("minutes")), " Min"]),
+            el("th", { class: "num", onClick: () => setSort("goals") },   [el("span", { class: "arrow" }, arrow("goals")),   " G"])
+          ])
+        ]),
+        el("tbody", null, rows.map(r => el("tr", null, [
+          el("td", null, r.name),
+          el("td", { class: "num" }, String(r.matches)),
+          el("td", { class: "num" }, String(r.minutes)),
+          el("td", { class: "num" }, String(r.goals))
+        ])))
+      ]);
+      card.appendChild(tbl);
+      if (s.matches.length === 0) {
+        card.appendChild(el("p", { class: "empty" },
+          "No matches logged yet. Add a match in the Matches tab to see totals here."));
+      }
+      root.appendChild(card);
+    }
+
+    /* ---------- Live setup form ---------- */
+    function renderLiveSetupForm(root, f, api) {
+      const players = Store.getState().players;
+      root.appendChild(el("div", { class: "stack" }, [
+        el("div", { class: "field" }, [
+          el("label", { for: "lf-opp" }, "Opponent"),
+          el("input", {
+            id: "lf-opp", type: "text", value: f.opponent, maxLength: 40,
+            placeholder: "e.g. Mt Eden Mavericks",
+            onInput: (e) => api.setSetupField("opponent", e.target.value)
+          })
+        ]),
+        el("div", { class: "field-row" }, [
+          el("div", { class: "field" }, [
+            el("label", { for: "lf-date" }, "Date"),
+            el("input", { id: "lf-date", type: "date", value: f.date,
+              onInput: (e) => api.setSetupField("date", e.target.value) })
+          ]),
+          el("div", { class: "field" }, [
+            el("label", { for: "lf-len" }, "Match length (min)"),
+            el("input", { id: "lf-len", type: "number", min: MIN_LENGTH, max: MAX_LENGTH, value: f.matchLength,
+              onInput: (e) => api.setSetupField("matchLength", e.target.value) })
+          ])
+        ])
+      ]));
+
+      // Starter picker
+      root.appendChild(el("div", { class: "field" }, [
+        el("label", null, [
+          "Starters ",
+          el("span", { class: "muted" }, `${f.starters.length}/${STARTERS_COUNT}`)
+        ])
+      ]));
+      const grid = el("div", { class: "picker live-picker" });
+      players.forEach((p) => {
+        const isStarter = f.starters.includes(p.id);
+        grid.appendChild(el("button", {
+          type: "button",
+          class: "pick-row" + (isStarter ? " starter" : ""),
+          onClick: () => api.toggleStarter(p.id)
+        }, [
+          el("span", { class: "pinitial sm " + (isStarter ? "starter" : "bench"), "aria-hidden": "true" }, initialsOf(p.name)),
+          el("span", { class: "grow" }, p.name),
+          el("span", { class: "muted" }, isStarter ? "Starter" : "Bench")
+        ]));
+      });
+      root.appendChild(grid);
+
+      if (f.errors.length) {
+        root.appendChild(el("div", { class: "err" }, f.errors.join(" ")));
+      }
+
+      const canStart = f.starters.length === STARTERS_COUNT;
+      root.appendChild(el("div", { class: "row" }, [
+        el("button", { class: "btn", onClick: () => api.cancelSetup() }, "Cancel"),
+        el("div", { class: "grow" }),
+        el("button", {
+          class: "btn btn-primary",
+          disabled: !canStart,
+          onClick: () => api.start()
+        }, "Start match")
+      ]));
+    }
+
+    function fmtClock(ms) {
+      const total = Math.max(0, Math.floor(ms / 1000));
+      const m = Math.floor(total / 60);
+      const s = total % 60;
+      return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+    }
+
+    /**
+     * Live milliseconds-played per player at the current moment.
+     * Walks sub events at their precise atMs (elapsed-ms when the sub fired),
+     * not the integer subMinute used by the saved-record engine. This keeps
+     * the on-pitch ticker accurate even when subs happen mid-minute.
+     */
+    function liveMillisecondsByPlayer() {
+      const lm = Store.getLive();
+      if (!lm) return new Map();
+      const cap = lm.matchLength * 60 * 1000;
+      const elapsedMs = Math.min(cap, Store.liveElapsedMs());
+      const subs = lm.events
+        .filter(e => e.kind === "sub")
+        .map(e => ({ off: e.off, on: e.on, atMs: Number.isFinite(e.atMs) ? e.atMs : (e.subMinute || 0) * 60000 }))
+        .sort((a, b) => a.atMs - b.atMs);
+
+      const ms = new Map();
+      const stintStart = new Map(); // pid → ms-into-match when current stint started
+      for (const pid of lm.starters) { stintStart.set(pid, 0); ms.set(pid, 0); }
+
+      for (const s of subs) {
+        if (s.atMs > elapsedMs) break;
+        if (stintStart.has(s.off)) {
+          const start = stintStart.get(s.off);
+          ms.set(s.off, (ms.get(s.off) || 0) + Math.max(0, s.atMs - start));
+          stintStart.delete(s.off);
+        }
+        stintStart.set(s.on, s.atMs);
+        if (!ms.has(s.on)) ms.set(s.on, 0);
+      }
+      for (const [pid, start] of stintStart.entries()) {
+        ms.set(pid, (ms.get(pid) || 0) + Math.max(0, elapsedMs - start));
+      }
+      return ms;
+    }
+
+    /* ---------- Live match view ---------- */
+    function renderLiveMatch(root, picker, api) {
+      const lm = Store.getLive();
+      if (!lm) return;
+      const elapsedMs = Store.liveElapsedMs();
+      const elapsedMin = elapsedMs / 60000;
+      const fullTime = elapsedMin >= lm.matchLength;
+
+      // Tally goals from events for the scoreline.
+      let ourScore = 0, theirScore = 0;
+      for (const e of lm.events) {
+        if (e.kind === "goalUs") ourScore++;
+        else if (e.kind === "goalThem") theirScore++;
+      }
+
+      // HUD
+      const hud = el("section", { class: "live-hud" }, [
+        el("div", { class: "opp-line" }, [
+          el("span", { class: "opp" }, "vs " + (lm.opponent || "(opponent)")),
+          el("span", { class: "status" }, fullTime ? "Full time"
+            : lm.paused ? "Paused" : "Live")
+        ]),
+        el("div", { class: "scoreline" }, [
+          el("div", { class: "side" }, [
+            el("div", { class: "label" }, "Us"),
+            el("div", { class: "val" }, String(ourScore))
+          ]),
+          el("div", { class: "clock" }, fmtClock(elapsedMs)),
+          el("div", { class: "side" }, [
+            el("div", { class: "label" }, "Them"),
+            el("div", { class: "val" }, String(theirScore))
+          ])
+        ]),
+        el("div", { class: "clock-row" }, [
+          (lm.paused
+            ? el("button", { class: "btn btn-resume", onClick: () => api.resume() }, "▶ Resume")
+            : el("button", { class: "btn btn-pause",  onClick: () => api.pause()  }, "⏸ Pause")),
+          el("button", { class: "btn btn-end", onClick: () => api.endMatch() }, "End match")
+        ])
+      ]);
+      root.appendChild(hud);
+
+      // Action buttons (or picker if one is active)
+      if (picker) {
+        root.appendChild(renderLivePicker(picker, api));
+      } else {
+        const actions = el("div", { class: "live-actions" }, [
+          el("button", { class: "btn btn-goal-us",   onClick: () => api.beginGoalUs(),   disabled: fullTime }, "⚽ Goal — Us"),
+          el("button", { class: "btn btn-goal-them", onClick: () => api.beginGoalThem(), disabled: fullTime }, "Goal — Them"),
+          el("button", { class: "btn btn-sub",       onClick: () => api.beginSub(),      disabled: fullTime }, "↔ Sub"),
+          el("button", { class: "btn btn-card",      onClick: () => api.beginCard(),     disabled: fullTime }, "🟨 Card")
+        ]);
+        root.appendChild(actions);
+      }
+
+      // Live roster
+      const players = Store.getState().players;
+      const onPitch = Store.liveOnPitch();
+      const playMs = liveMillisecondsByPlayer();
+      const stats = computeLiveStats(lm);
+
+      const subPicking = !!(picker && picker.kind === "sub" && picker.step === "on");
+      const preselectedOff = subPicking ? picker.partial.off : null;
+      const directSubsAvailable = !lm.paused && !fullTime;
+
+      const onPitchCard = el("section", { class: "card" }, [
+        el("div", { class: "live-section-title" }, "On the pitch (" + onPitch.size + ")")
+      ]);
+      if (directSubsAvailable && !picker) {
+        onPitchCard.appendChild(el("p", { class: "muted live-hint" },
+          "Tap a player on the pitch to start a sub."));
+      } else if (subPicking) {
+        onPitchCard.appendChild(el("p", { class: "muted live-hint" },
+          "Pick a bench player below to bring on, or tap another on-pitch player to swap who's coming off."));
+      }
+      const onPitchGrid = el("div", { class: "live-roster-grid" });
+      players.filter(p => onPitch.has(p.id)).forEach((p, i) => {
+        const tappable = directSubsAvailable && (!picker || subPicking);
+        const preselected = preselectedOff === p.id;
+        onPitchGrid.appendChild(buildLiveRow(p, i + 1, playMs.get(p.id) || 0, stats[p.id], "on-pitch", {
+          tappable,
+          preselected,
+          onClick: tappable ? () => api.directSubFromPitch(p.id) : null
+        }));
+      });
+      onPitchCard.appendChild(onPitchGrid);
+      root.appendChild(onPitchCard);
+
+      const benchCard = el("section", { class: "card" }, [
+        el("div", { class: "live-section-title" }, "Bench")
+      ]);
+      const benchGrid = el("div", { class: "live-roster-grid" });
+      players.filter(p => !onPitch.has(p.id)).forEach((p) => {
+        const armed = subPicking && directSubsAvailable;
+        benchGrid.appendChild(buildLiveRow(p, "B", playMs.get(p.id) || 0, stats[p.id], "on-bench", {
+          tappable: armed,
+          armed,
+          onClick: armed ? () => api.directSubFromBench(p.id) : null
+        }));
+      });
+      benchCard.appendChild(benchGrid);
+      root.appendChild(benchCard);
+
+      // Undo toast — sticky at bottom for 5s after a sub commits.
+      if (lastSubToast) {
+        const offName = Store.playerName(lastSubToast.offId);
+        const onName  = Store.playerName(lastSubToast.onId);
+        root.appendChild(el("div", { class: "sub-toast", role: "status" }, [
+          el("span", { class: "sub-toast-text" }, "Sub: " + offName + " → " + onName),
+          el("button", { class: "btn btn-sm sub-toast-undo", onClick: () => { api.undoLastSub(); render(); } }, "Undo")
+        ]));
+      }
+
+      // Events log
+      const eventsCard = el("section", { class: "card" }, [
+        el("div", { class: "live-section-title" }, "Events"),
+      ]);
+      if (lm.events.length === 0) {
+        eventsCard.appendChild(el("p", { class: "empty" }, "No events yet."));
+      } else {
+        const list = el("div", { class: "live-events" });
+        lm.events.slice().reverse().forEach(ev => list.appendChild(buildEventRow(ev, api)));
+        eventsCard.appendChild(list);
+      }
+      root.appendChild(eventsCard);
+
+      // Cancel link
+      root.appendChild(el("div", { class: "row" }, [
+        el("button", { class: "btn btn-danger", onClick: () => api.cancelLive() }, "Discard live match")
+      ]));
+    }
+
+    function computeLiveStats(lm) {
+      const stats = {};
+      for (const pid of lm.starters) stats[pid] = { goals: 0, assists: 0, yellow: false, red: false };
+      for (const e of lm.events) {
+        if (e.kind === "sub" && e.on) stats[e.on] = stats[e.on] || { goals: 0, assists: 0, yellow: false, red: false };
+        if (e.kind === "goalUs") {
+          if (e.scorer) { stats[e.scorer] = stats[e.scorer] || { goals: 0, assists: 0, yellow: false, red: false }; stats[e.scorer].goals++; }
+          if (e.assist) { stats[e.assist] = stats[e.assist] || { goals: 0, assists: 0, yellow: false, red: false }; stats[e.assist].assists++; }
+        } else if (e.kind === "yellow" && e.player) {
+          stats[e.player] = stats[e.player] || { goals: 0, assists: 0, yellow: false, red: false };
+          stats[e.player].yellow = true;
+        } else if (e.kind === "red" && e.player) {
+          stats[e.player] = stats[e.player] || { goals: 0, assists: 0, yellow: false, red: false };
+          stats[e.player].red = true;
+        }
+      }
+      return stats;
+    }
+
+    function buildLiveRow(p, badge, playedMs, st, klass, opts) {
+      const meta = el("div", { class: "pmeta" });
+      if (st && st.goals)   meta.appendChild(el("span", { class: "pchip goal"   }, st.goals + "⚽"));
+      if (st && st.assists) meta.appendChild(el("span", { class: "pchip assist" }, st.assists + "🅰"));
+      if (st && st.yellow)  meta.appendChild(el("span", { class: "pchip yellow" }, "🟨"));
+      if (st && st.red)     meta.appendChild(el("span", { class: "pchip red"    }, "🟥"));
+      const o = opts || {};
+      const initialsKlass = "pinitial sm " + (klass === "on-pitch" ? "starter" : "bench");
+      const cls =
+        "live-row " + klass +
+        (o.tappable ? " tappable" : "") +
+        (o.preselected ? " preselected" : "") +
+        (o.armed ? " armed" : "");
+      const attrs = { class: cls };
+      if (o.onClick) {
+        attrs.role = "button";
+        attrs.tabindex = "0";
+        attrs.onClick = o.onClick;
+        attrs.onKeyDown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); o.onClick(); } };
+      }
+      return el("div", attrs, [
+        el("span", { class: "pos" }, String(badge)),
+        el("span", { class: initialsKlass, "aria-hidden": "true" }, initialsOf(p.name)),
+        el("span", { class: "pname" }, p.name),
+        meta,
+        el("span", { class: "ptime scoreboard" }, fmtClock(playedMs))
+      ]);
+    }
+
+    function buildEventRow(ev, api) {
+      const minLabel = (ev.minute || 0) + "′";
+      let text = "";
+      let klass = "kind-" + ev.kind;
+      if (ev.kind === "goalUs") {
+        const s = ev.scorer ? Store.playerName(ev.scorer) : "(unknown)";
+        text = "Goal: " + s + (ev.assist ? " (a: " + Store.playerName(ev.assist) + ")" : "");
+      } else if (ev.kind === "goalThem") {
+        text = "Goal — opposition";
+      } else if (ev.kind === "sub") {
+        text = "Sub: " + Store.playerName(ev.off) + " → " + Store.playerName(ev.on);
+      } else if (ev.kind === "yellow") {
+        text = "Yellow card: " + Store.playerName(ev.player);
+      } else if (ev.kind === "red") {
+        text = "Red card: " + Store.playerName(ev.player);
+      } else {
+        text = ev.kind;
+      }
+      return el("div", { class: "live-event " + klass }, [
+        el("span", { class: "e-time" }, minLabel),
+        el("span", { class: "e-text" }, text),
+        el("button", { class: "e-undo", onClick: () => api.undoEvent(ev.id) }, "undo")
+      ]);
+    }
+
+    function renderLivePicker(picker, api) {
+      const lm = Store.getLive();
+      const players = Store.getState().players;
+      const onPitch = Store.liveOnPitch();
+
+      let title = "";
+      let pool = [];
+      let canSkip = false;
+      if (picker.kind === "goalUs" && picker.step === "scorer") {
+        title = "Who scored?";
+        pool = players.filter(p => onPitch.has(p.id));
+      } else if (picker.kind === "goalUs" && picker.step === "assist") {
+        title = "Assist? (or skip)";
+        pool = players.filter(p => onPitch.has(p.id));
+        canSkip = true;
+      } else if (picker.kind === "sub" && picker.step === "off") {
+        title = "Who's coming off?";
+        pool = players.filter(p => onPitch.has(p.id));
+      } else if (picker.kind === "sub" && picker.step === "on") {
+        title = "Who's coming on?";
+        pool = players.filter(p => !onPitch.has(p.id));
+      } else if (picker.kind === "card" && picker.step === "player") {
+        title = "Card — which player?";
+        pool = players;
+      } else if (picker.kind === "card" && picker.step === "color") {
+        title = "Yellow or red?";
+      }
+
+      const card = el("section", { class: "card" }, [
+        el("div", { class: "row" }, [
+          el("h3", { class: "grow" }, title),
+          el("button", { class: "btn", onClick: () => api.cancelPicker() }, "Cancel")
+        ])
+      ]);
+
+      if (picker.kind === "card" && picker.step === "color") {
+        card.appendChild(el("div", { class: "live-actions" }, [
+          el("button", { class: "btn btn-card", onClick: () => api.pickCardColor("yellow") }, "🟨 Yellow"),
+          el("button", { class: "btn btn-goal-them", onClick: () => api.pickCardColor("red") }, "🟥 Red")
+        ]));
+        return card;
+      }
+
+      const grid = el("div", { class: "picker live-picker" });
+      pool.forEach(p => {
+        grid.appendChild(el("button", {
+          type: "button",
+          class: "pick-row",
+          onClick: () => api.pickPlayer(p.id)
+        }, [
+          el("span", { class: "pinitial sm", "aria-hidden": "true" }, initialsOf(p.name)),
+          el("span", { class: "grow" }, p.name)
+        ]));
+      });
+      card.appendChild(grid);
+      if (canSkip) {
+        card.appendChild(el("div", { class: "row" }, [
+          el("button", { class: "btn", onClick: () => api.skipAssist() }, "No assist (skip)")
+        ]));
+      }
+      return card;
+    }
+
+    return {
+      renderRoster, renderMatches, renderDashboard, renderMatchDetail,
+      renderLiveMatch
+    };
+  })();
+
+  /* =========================================================================
+   * Boot
+   * ======================================================================= */
+  document.addEventListener("DOMContentLoaded", App.init);
+
+})();
+</script>
+</body>
+</html>
