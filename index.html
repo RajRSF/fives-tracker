@@ -3,36 +3,53 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<meta name="theme-color" content="#0a6b2e" />
-<title>Fives Tracker</title>
+<meta name="theme-color" content="#00205C" />
+<title>KW Harriers</title>
 <style>
-  /* ---------- Theme ---------- */
+  /* ---------- Theme: KW Harriers (derived from kingsway.school.nz) ---------- */
   :root {
-    --pitch:        #0a6b2e;
-    --pitch-dark:   #07501f;
-    --pitch-deep:   #053414;
-    --chalk:        #ffffff;
-    --ink:          #0e1411;
-    --ink-soft:     #2a352f;
-    --paper:        #f5f7f4;
-    --line:         #d8ddd5;
-    --muted:        #6a7a70;
-    --warn:         #c0392b;
-    --warn-bg:      #fdecea;
-    --win:          #138a3f;
-    --draw:         #6a7a70;
-    --loss:         #c0392b;
-    --shadow:       0 1px 2px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
-    --radius:       10px;
-    --radius-sm:    6px;
+    /* KW brand */
+    --kw-navy:      #00205C;
+    --kw-deep:      #00597C;
+    --kw-link:      #0170B9;
+    --kw-accent:    #0174BD;
+    --kw-ink:       #141B38;
+    --kw-success:   #00D084;
+    --kw-warn:      #F4B400;
+    --kw-danger:    #C53030;
+    --kw-line:      #E5E7EB;
+    --kw-muted:     #6B7280;
+    --kw-bg-soft:   #F5F7FA;
+
+    /* Legacy token aliases — kept so existing CSS rules don't need rewriting. */
+    --pitch:        var(--kw-navy);
+    --pitch-dark:   var(--kw-deep);
+    --pitch-deep:   var(--kw-ink);
+    --chalk:        #FFFFFF;
+    --ink:          var(--kw-ink);
+    --ink-soft:     #2A3552;
+    --paper:        var(--kw-bg-soft);
+    --line:         var(--kw-line);
+    --muted:        var(--kw-muted);
+    --warn:         var(--kw-danger);
+    --warn-bg:      #FDECEA;
+    --win:          var(--kw-success);
+    --draw:         var(--kw-muted);
+    --loss:         var(--kw-danger);
+
+    --shadow:       0 1px 2px rgba(0,32,92,0.06), 0 4px 12px rgba(0,32,92,0.05);
+    --radius:       12px;
+    --radius-sm:    8px;
     --tap:          44px;
+
+    --font-brand: "Avenir Next", "Work Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   }
   * { box-sizing: border-box; }
   html, body {
     margin: 0; padding: 0;
     background: var(--paper);
     color: var(--ink);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Helvetica Neue", Arial, sans-serif;
+    font-family: var(--font-brand);
     font-size: 16px;
     line-height: 1.4;
     -webkit-text-size-adjust: 100%;
@@ -51,11 +68,11 @@
 
   /* ---------- Layout ---------- */
   header {
-    background: linear-gradient(180deg, var(--pitch) 0%, var(--pitch-dark) 100%);
+    background: var(--kw-navy);
     color: var(--chalk);
     padding: 14px 16px 0;
     position: sticky; top: 0; z-index: 10;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    box-shadow: 0 2px 8px rgba(0,32,92,0.18);
   }
   .brand {
     display: flex; align-items: center; gap: 10px;
@@ -63,12 +80,15 @@
   }
   .brand-mark {
     width: 32px; height: 32px; border-radius: 50%;
-    background: var(--chalk); color: var(--pitch);
+    background: var(--chalk); color: var(--kw-navy);
     display: inline-flex; align-items: center; justify-content: center;
-    font-weight: 900; font-size: 18px;
-    box-shadow: inset 0 0 0 2px var(--pitch-dark);
+    font-weight: 800; font-size: 12px; letter-spacing: 0.04em;
   }
-  .brand h1 { color: var(--chalk); }
+  .brand h1 {
+    color: var(--chalk);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
   .tabs {
     display: flex;
     gap: 0;
@@ -481,10 +501,10 @@
     margin-bottom: 12px;
   }
   .live-actions .btn { min-height: 52px; border-radius: var(--radius-sm); font-weight: 700; }
-  .live-actions .btn-goal-us   { background: var(--win); color: var(--chalk); border: 0; }
-  .live-actions .btn-goal-them { background: var(--loss); color: var(--chalk); border: 0; }
-  .live-actions .btn-sub       { background: var(--ink); color: var(--chalk); border: 0; }
-  .live-actions .btn-card      { background: #b88600; color: var(--chalk); border: 0; }
+  .live-actions .btn-goal-us   { background: var(--kw-success); color: var(--kw-ink);   border: 0; font-weight: 700; }
+  .live-actions .btn-goal-them { background: var(--kw-danger);  color: var(--chalk);    border: 0; font-weight: 700; }
+  .live-actions .btn-sub       { background: var(--kw-deep);    color: var(--chalk);    border: 0; font-weight: 700; }
+  .live-actions .btn-card      { background: var(--kw-warn);    color: var(--kw-ink);   border: 0; font-weight: 700; }
 
   .live-section-title { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin: 4px 0 8px; }
 
@@ -590,8 +610,8 @@
 <body>
 <header>
   <div class="brand">
-    <span class="brand-mark">5</span>
-    <h1>Fives Tracker</h1>
+    <span class="brand-mark" aria-hidden="true">KW</span>
+    <h1>KW Harriers</h1>
   </div>
   <nav class="tabs" id="tabs" role="tablist">
     <button data-tab="roster"    role="tab">Roster</button>
