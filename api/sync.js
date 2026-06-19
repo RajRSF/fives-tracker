@@ -78,13 +78,17 @@ async function kvGet(creds, code) {
 }
 
 async function kvSet(creds, code, value) {
+  // Upstash REST /set/<key> takes the raw request body as the value.
+  // `value` is already a JSON string — sending `JSON.stringify(value)`
+  // would double-encode it and the GET would round-trip to a string,
+  // not the object we expect.
   const res = await fetch(`${creds.url}/set/${KEY_PREFIX}${code}`, {
     method: "POST",
     headers: {
       authorization: `Bearer ${creds.token}`,
-      "content-type": "application/json",
+      "content-type": "text/plain",
     },
-    body: JSON.stringify(value),
+    body: value,
   });
   if (!res.ok) throw new Error(`KV SET ${res.status}`);
 }
