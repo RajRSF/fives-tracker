@@ -2836,7 +2836,7 @@
       const s = Store.getState();
       const totals = new Map();
       for (const p of s.players) {
-        totals.set(p.id, { id: p.id, matches: 0, minutes: 0, goals: 0 });
+        totals.set(p.id, { id: p.id, matches: 0, minutes: 0, goals: 0, assists: 0 });
       }
       for (const m of s.matches) {
         const minutes = MinutesEngine.computeMinutesByPlayer(m.starters, m.subs, m.matchLength);
@@ -2848,7 +2848,10 @@
           if (appeared.has(p.id) && min > 0) t.matches += 1;
           t.minutes += min;
           const st = m.stats[p.id];
-          if (st) t.goals += (st.goals || 0);
+          if (st) {
+            t.goals   += (st.goals   || 0);
+            t.assists += (st.assists || 0);
+          }
         }
       }
 
@@ -2862,6 +2865,7 @@
           case "matches": av = a.matches; bv = b.matches; break;
           case "minutes": av = a.minutes; bv = b.minutes; break;
           case "goals":   av = a.goals;   bv = b.goals;   break;
+          case "assists": av = a.assists; bv = b.assists; break;
           default:        av = a.minutes; bv = b.minutes;
         }
         if (av < bv) return -1 * dir;
@@ -2882,14 +2886,16 @@
             el("th", { onClick: () => setSort("name") },    ["Player ",  el("span", { class: "arrow" }, arrow("name"))]),
             el("th", { class: "num", onClick: () => setSort("matches") }, [el("span", { class: "arrow" }, arrow("matches")), " MP"]),
             el("th", { class: "num", onClick: () => setSort("minutes") }, [el("span", { class: "arrow" }, arrow("minutes")), " Min"]),
-            el("th", { class: "num", onClick: () => setSort("goals") },   [el("span", { class: "arrow" }, arrow("goals")),   " G"])
+            el("th", { class: "num", onClick: () => setSort("goals") },   [el("span", { class: "arrow" }, arrow("goals")),   " G"]),
+            el("th", { class: "num", onClick: () => setSort("assists") }, [el("span", { class: "arrow" }, arrow("assists")), " A"])
           ])
         ]),
         el("tbody", null, rows.map(r => el("tr", null, [
           el("td", null, r.name),
           el("td", { class: "num" }, String(r.matches)),
           el("td", { class: "num" }, String(r.minutes)),
-          el("td", { class: "num" }, String(r.goals))
+          el("td", { class: "num" }, String(r.goals)),
+          el("td", { class: "num" }, String(r.assists))
         ])))
       ]);
       card.appendChild(tbl);
