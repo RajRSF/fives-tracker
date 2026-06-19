@@ -79,7 +79,7 @@
   header {
     background: var(--kw-navy);
     color: var(--chalk);
-    padding: 14px 16px 0;
+    padding: calc(14px + env(safe-area-inset-top, 0px)) 16px 0;
     position: sticky; top: 0; z-index: 10;
     box-shadow: 0 2px 8px rgba(0,32,92,0.18);
   }
@@ -616,6 +616,8 @@
     position: fixed; inset: 0; z-index: 1000;
     display: flex; align-items: center; justify-content: center;
     background: var(--kw-navy);
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
     transition: opacity 320ms ease, visibility 0s linear 320ms;
   }
   #splash .splash-mark {
