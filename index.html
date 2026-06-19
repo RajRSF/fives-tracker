@@ -3,19 +3,28 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<meta name="theme-color" content="#00205C" />
+<meta name="theme-color" content="#15397F" />
 <title>KW Harriers</title>
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="KW Harriers" />
 <style>
-  /* ---------- Theme: KW Harriers (derived from kingsway.school.nz) ---------- */
+  /* ---------- Theme: KW Harriers (derived from kingsway.school.nz crest) ---------- */
   :root {
-    /* KW brand */
-    --kw-navy:      #00205C;
-    --kw-deep:      #00597C;
+    /* KW brand — sourced directly from Kingsway School crest SVG */
+    --kw-navy:      #15397F;   /* Crest navy — the authoritative brand blue */
+    --kw-navy-dark: #0F2A60;   /* Slightly deeper navy for hovers/shadow */
+    --kw-yellow:    #FFD200;   /* Crest yellow — the authoritative brand accent */
+    --kw-yellow-soft: #FFF1B3; /* Pale yellow for backgrounds, hover wash */
+    --kw-yellow-deep: #E0B900; /* Hover/border state for yellow surfaces */
+    --kw-deep:      #00597C;   /* Secondary navy — sub-headers, hover surfaces */
     --kw-link:      #0170B9;
     --kw-accent:    #0174BD;
     --kw-ink:       #141B38;
-    --kw-success:   #00D084;
-    --kw-warn:      #F4B400;
+    --kw-success:   #00B36A;
+    --kw-warn:      var(--kw-yellow);
     --kw-danger:    #C53030;
     --kw-line:      #E5E7EB;
     --kw-muted:     #6B7280;
@@ -23,7 +32,7 @@
 
     /* Legacy token aliases — kept so existing CSS rules don't need rewriting. */
     --pitch:        var(--kw-navy);
-    --pitch-dark:   var(--kw-deep);
+    --pitch-dark:   var(--kw-navy-dark);
     --pitch-deep:   var(--kw-ink);
     --chalk:        #FFFFFF;
     --ink:          var(--kw-ink);
@@ -79,10 +88,15 @@
     margin-bottom: 12px;
   }
   .brand-mark {
-    width: 32px; height: 32px; border-radius: 50%;
-    background: var(--chalk); color: var(--kw-navy);
-    display: inline-flex; align-items: center; justify-content: center;
-    font-weight: 800; font-size: 12px; letter-spacing: 0.04em;
+    width: 36px; height: 36px;
+    flex: 0 0 auto;
+    display: inline-block;
+    background-image: url("icon-192.png");
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    /* Subtle yellow halo so the crest sits cleanly on navy */
+    filter: drop-shadow(0 0 0.5px rgba(255, 210, 0, 0.6));
   }
   .brand h1 {
     color: var(--chalk);
@@ -110,7 +124,7 @@
   }
   .tabs button.active {
     color: var(--chalk);
-    border-bottom-color: var(--chalk);
+    border-bottom-color: var(--kw-yellow);
   }
   main {
     padding: 16px;
@@ -149,7 +163,7 @@
     font-size: 16px;
   }
   input[type=number] { font-variant-numeric: tabular-nums; }
-  input:focus, select:focus { outline: 2px solid var(--pitch); outline-offset: 1px; }
+  input:focus, select:focus { outline: 2px solid var(--kw-yellow); outline-offset: 1px; border-color: var(--kw-navy); }
   .field { margin-bottom: 10px; }
   .field-row {
     display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
@@ -454,6 +468,7 @@
     background: var(--pitch); color: var(--chalk);
     padding: 12px 14px; border-radius: var(--radius);
     margin-bottom: 12px; box-shadow: var(--shadow);
+    border-left: 3px solid var(--kw-yellow);
   }
   .live-banner .dot {
     width: 10px; height: 10px; border-radius: 50%;
@@ -488,7 +503,7 @@
   .live-hud .scoreline .side { text-align: center; }
   .live-hud .scoreline .side .label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.12em; opacity: 0.85; }
   .live-hud .scoreline .side .val { font-variant-numeric: tabular-nums; font-weight: 900; font-size: 2.6rem; line-height: 1; }
-  .live-hud .scoreline .clock { font-variant-numeric: tabular-nums; font-weight: 900; font-size: 2rem; padding: 0 6px; }
+  .live-hud .scoreline .clock { font-variant-numeric: tabular-nums; font-weight: 900; font-size: 2rem; padding: 0 6px; color: var(--kw-yellow); }
   .live-hud .clock-row { display: flex; gap: 8px; }
   .live-hud .clock-row .btn { flex: 1; min-height: var(--tap); border-radius: var(--radius-sm); font-weight: 700; border: 0; }
   .live-hud .btn-pause   { background: rgba(255,255,255,0.15); color: var(--chalk); }
@@ -545,7 +560,7 @@
   }
   .live-row .pchip.goal   { background: var(--win); }
   .live-row .pchip.assist { background: var(--pitch-dark); }
-  .live-row .pchip.yellow { background: #e6b800; color: var(--ink); }
+  .live-row .pchip.yellow { background: var(--kw-yellow); color: var(--ink); }
   .live-row .pchip.red    { background: var(--loss); }
 
   .live-row.tappable { cursor: pointer; }
@@ -564,8 +579,8 @@
   }
   .sub-toast-text { flex: 1; font-weight: 600; }
   .sub-toast-undo {
-    background: transparent; color: var(--chalk);
-    border: 1px solid var(--chalk);
+    background: transparent; color: var(--kw-yellow);
+    border: 1px solid var(--kw-yellow);
     border-radius: 999px; min-height: 32px; padding: 4px 14px;
     font-weight: 800;
   }
@@ -579,7 +594,7 @@
   .live-event.kind-goalUs   { border-left-color: var(--win); }
   .live-event.kind-goalThem { border-left-color: var(--loss); }
   .live-event.kind-sub      { border-left-color: var(--ink); }
-  .live-event.kind-yellow   { border-left-color: #e6b800; }
+  .live-event.kind-yellow   { border-left-color: var(--kw-yellow); }
   .live-event.kind-red      { border-left-color: var(--loss); }
   .live-event .e-time { font-variant-numeric: tabular-nums; font-weight: 800; min-width: 44px; }
   .live-event .e-text { flex: 1; }
@@ -596,6 +611,40 @@
   details.past-match-disclosure summary::-webkit-details-marker { display: none; }
   details.past-match-disclosure[open] summary { color: var(--ink); margin-bottom: 8px; }
 
+  /* ---------- Splash / launch ---------- */
+  #splash {
+    position: fixed; inset: 0; z-index: 1000;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--kw-navy);
+    transition: opacity 320ms ease, visibility 0s linear 320ms;
+  }
+  #splash .splash-mark {
+    width: 128px; height: 128px;
+    background-image: url("icon-192.png");
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    animation: splashPop 420ms ease-out both;
+  }
+  #splash .splash-word {
+    position: absolute; bottom: 18%;
+    color: var(--chalk);
+    font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase;
+    font-size: 0.78rem;
+  }
+  #splash .splash-word::after {
+    content: ""; display: block;
+    width: 28px; height: 2px; margin: 8px auto 0;
+    background: var(--kw-yellow);
+  }
+  body.app-ready #splash {
+    opacity: 0; visibility: hidden;
+  }
+  @keyframes splashPop {
+    from { transform: scale(0.92); opacity: 0; }
+    to   { transform: scale(1);    opacity: 1; }
+  }
+
   /* ---------- Responsive ---------- */
   @media (min-width: 480px) {
     .picker { grid-template-columns: 1fr 1fr; }
@@ -608,9 +657,13 @@
 </style>
 </head>
 <body>
+<div id="splash" aria-hidden="true">
+  <div class="splash-mark" role="img" aria-label="Kingsway School crest"></div>
+  <div class="splash-word">KW Harriers</div>
+</div>
 <header>
   <div class="brand">
-    <span class="brand-mark" aria-hidden="true">KW</span>
+    <span class="brand-mark" role="img" aria-label="Kingsway School crest"></span>
     <h1>KW Harriers</h1>
   </div>
   <nav class="tabs" id="tabs" role="tablist">
@@ -1242,6 +1295,8 @@
       if (Store.getLive()) setTab("matches");
       else setTab("roster");
       manageTicker();
+      // Hold the splash for a beat so the crest is felt, then fade.
+      setTimeout(() => { document.body.classList.add("app-ready"); }, 420);
     }
 
     /**
