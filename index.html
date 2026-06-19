@@ -150,6 +150,29 @@
   .settings-actions { gap: 8px; flex-wrap: wrap; }
   .settings-actions .btn { flex: 1 1 140px; min-width: 0; }
 
+  /* ---------- Cloud sync card ---------- */
+  .cloud-status {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 0.78rem; font-weight: 800;
+    padding: 2px 10px; border-radius: 999px;
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .cloud-status.bound { background: var(--kw-success); color: var(--chalk); }
+  .cloud-status.unbound { background: var(--line); color: var(--ink-soft); }
+  .cloud-status.syncing { background: var(--kw-yellow); color: var(--kw-ink); }
+  .cloud-status.error { background: var(--kw-danger); color: var(--chalk); }
+  .cloud-code-input {
+    letter-spacing: 0.4em; text-align: center;
+    font-variant-numeric: tabular-nums;
+    font-weight: 800; font-size: 1.1rem;
+  }
+  .cloud-code-display {
+    font-variant-numeric: tabular-nums;
+    font-weight: 800; font-size: 1.15rem;
+    letter-spacing: 0.3em;
+    color: var(--kw-navy);
+  }
+
   /* ---------- Form fields ---------- */
   label { display: block; font-weight: 600; margin-bottom: 4px; font-size: 0.92rem; }
   input[type=text], input[type=number], input[type=date], select {
@@ -1287,6 +1310,9 @@
     function init() {
       Store.load();
       Store.subscribe(() => { manageTicker(); render(); });
+      // Cloud sync — boot fetch + debounced auto-push.
+      Store.subscribe(() => { Cloud.scheduleAutoPush(); });
+      Cloud.bootSync();
       tabs.addEventListener("click", (e) => {
         const btn = e.target.closest("button[data-tab]");
         if (btn) setTab(btn.dataset.tab);
@@ -1320,7 +1346,7 @@
 
     function render() {
       view.innerHTML = "";
-      if (currentTab === "roster")    Render.renderRoster(view, dataApi);
+      if (currentTab === "roster")    Render.renderRoster(view, dataApi, cloudApi);
       else if (currentTab === "matches") {
         if (openMatchId) Render.renderMatchDetail(view, openMatchId, exitDetail, requestDeleteMatch);
         else if (Store.getLive()) Render.renderLiveMatch(view, livePicker, liveApi);
@@ -1433,6 +1459,301 @@
         input.click();
         // The change handler keeps the input alive; remove it after a beat.
         setTimeout(() => { if (input.parentNode) input.parentNode.removeChild(input); }, 5000);
+      }
+    };
+
+    /* ---------- Cloud sync: 6-digit code → /api/sync (Vercel KV) -----------
+     * Capability auth: anyone with the code reads/writes the same blob.
+     * Last-write-wins via Date.now() timestamp; we prompt before pulling
+     * a remote that's newer than the local snapshot, so a sideline edit
+     * isn't quietly overwritten by another device's stale state.
+     * --------------------------------------------------------------------- */
+    const Cloud = (function () {
+      const CODE_KEY    = "fivesTracker.cloud.code";
+      const META_KEY    = "fivesTracker.cloud.meta";
+      const ENDPOINT    = "/api/sync";
+      const PUSH_DEBOUNCE_MS = 1500;
+
+      let pushTimer = null;
+      let pushInFlight = false;
+      let pushAgainAfter = false;
+      let suppressAutoPush = 0;  // counter — non-zero while we're applying a remote pull
+      let lastStatus = "idle";   // idle | syncing | ok | error | offline
+      let lastError = "";
+      let lastSyncedAt = 0;
+
+      function getCode() {
+        try { return localStorage.getItem(CODE_KEY) || ""; }
+        catch { return ""; }
+      }
+      function setCode(code) {
+        try { localStorage.setItem(CODE_KEY, code); }
+        catch (e) { console.warn("Cloud: code write failed", e); }
+      }
+      function clearCode() {
+        try {
+          localStorage.removeItem(CODE_KEY);
+          localStorage.removeItem(META_KEY);
+        } catch {}
+        lastStatus = "idle";
+        lastError = "";
+        lastSyncedAt = 0;
+      }
+      function isBound() { return /^\d{6}$/.test(getCode()); }
+      function generateCode() {
+        return String(Math.floor(100000 + Math.random() * 900000));
+      }
+      function getMeta() {
+        try {
+          const raw = localStorage.getItem(META_KEY);
+          if (!raw) return { lastUpdated: 0, lastSyncedAt: 0 };
+          const o = JSON.parse(raw);
+          return {
+            lastUpdated:   Number.isFinite(o.lastUpdated)   ? o.lastUpdated   : 0,
+            lastSyncedAt:  Number.isFinite(o.lastSyncedAt)  ? o.lastSyncedAt  : 0
+          };
+        } catch { return { lastUpdated: 0, lastSyncedAt: 0 }; }
+      }
+      function setMeta(updated, syncedAt) {
+        try {
+          localStorage.setItem(META_KEY, JSON.stringify({
+            lastUpdated:  updated  || 0,
+            lastSyncedAt: syncedAt || 0
+          }));
+        } catch {}
+      }
+      function status() {
+        return {
+          bound: isBound(),
+          code: getCode(),
+          status: lastStatus,
+          error: lastError,
+          lastSyncedAt
+        };
+      }
+
+      function setStatus(s, err) {
+        lastStatus = s;
+        lastError = err || "";
+        // Re-render so the status pill reflects the new state.
+        if (currentTab === "roster") render();
+      }
+
+      async function pull(opts) {
+        const code = getCode();
+        if (!/^\d{6}$/.test(code)) {
+          setStatus("error", "No code set");
+          return { ok: false, reason: "no_code" };
+        }
+        setStatus("syncing");
+        try {
+          const res = await fetch(ENDPOINT + "?code=" + encodeURIComponent(code), {
+            method: "GET",
+            headers: { accept: "application/json" },
+            cache: "no-store"
+          });
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            setStatus("error", body.error || ("HTTP " + res.status));
+            return { ok: false, reason: body.error || "http_error" };
+          }
+          if (!body.exists) {
+            setStatus("ok");
+            return { ok: true, exists: false };
+          }
+          // Apply.
+          if (opts && opts.previewOnly) {
+            return { ok: true, exists: true, data: body.data, updated: body.updated || 0 };
+          }
+          suppressAutoPush++;
+          try { Store.importState(body.data); }
+          finally {
+            // Release on next tick so the subscribe-fired auto-push sees the flag.
+            setTimeout(() => { suppressAutoPush = Math.max(0, suppressAutoPush - 1); }, 0);
+          }
+          lastSyncedAt = Date.now();
+          setMeta(body.updated || 0, lastSyncedAt);
+          setStatus("ok");
+          return { ok: true, exists: true, updated: body.updated || 0 };
+        } catch (err) {
+          setStatus("error", String(err.message || err));
+          return { ok: false, reason: "network" };
+        }
+      }
+
+      async function push() {
+        const code = getCode();
+        if (!/^\d{6}$/.test(code)) return { ok: false, reason: "no_code" };
+        if (pushInFlight) { pushAgainAfter = true; return { ok: false, reason: "in_flight" }; }
+        pushInFlight = true;
+        setStatus("syncing");
+        try {
+          const payload = Store.exportState();
+          const res = await fetch(ENDPOINT, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ code, data: payload })
+          });
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            setStatus("error", body.error || ("HTTP " + res.status));
+            return { ok: false, reason: body.error || "http_error" };
+          }
+          lastSyncedAt = Date.now();
+          setMeta(body.updated || lastSyncedAt, lastSyncedAt);
+          setStatus("ok");
+          return { ok: true, updated: body.updated };
+        } catch (err) {
+          setStatus("error", String(err.message || err));
+          return { ok: false, reason: "network" };
+        } finally {
+          pushInFlight = false;
+          if (pushAgainAfter) {
+            pushAgainAfter = false;
+            setTimeout(() => { push(); }, 200);
+          }
+        }
+      }
+
+      function scheduleAutoPush() {
+        if (!isBound()) return;
+        if (suppressAutoPush > 0) return;
+        if (pushTimer) clearTimeout(pushTimer);
+        pushTimer = setTimeout(() => {
+          pushTimer = null;
+          push();
+        }, PUSH_DEBOUNCE_MS);
+      }
+
+      async function bootSync() {
+        if (!isBound()) return;
+        // Detect a remote that's newer than what we last pulled. If so,
+        // ask before adopting — coach may have an active local match they
+        // don't want overwritten.
+        const meta = getMeta();
+        setStatus("syncing");
+        try {
+          const res = await fetch(ENDPOINT + "?code=" + encodeURIComponent(getCode()), {
+            method: "GET", headers: { accept: "application/json" }, cache: "no-store"
+          });
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok) { setStatus("error", body.error || ("HTTP " + res.status)); return; }
+          if (!body.exists) {
+            // First time on this code — push our local copy so other devices can pull it.
+            await push();
+            return;
+          }
+          const remoteUpdated = body.updated || 0;
+          const localUpdated  = meta.lastUpdated || 0;
+          if (remoteUpdated > localUpdated) {
+            // Remote is newer than our last sync — ask the user.
+            Modal.confirm({
+              title: "Cloud has newer data",
+              message: "A more recent backup is in the cloud (" + new Date(remoteUpdated).toLocaleString() +
+                ").\n\nReplace this device's data with the cloud copy?",
+              confirmLabel: "Pull cloud copy",
+              danger: false,
+              onConfirm: () => {
+                suppressAutoPush++;
+                try { Store.importState(body.data); }
+                finally {
+                  setTimeout(() => { suppressAutoPush = Math.max(0, suppressAutoPush - 1); }, 0);
+                }
+                lastSyncedAt = Date.now();
+                setMeta(remoteUpdated, lastSyncedAt);
+                setStatus("ok");
+              }
+            });
+            // If they cancel, leave local untouched. Next change pushes up.
+            setStatus("ok");
+            return;
+          }
+          // Local is at-or-newer than cloud — make sure cloud reflects it,
+          // BUT never overwrite a populated cloud blob from a fresh device
+          // (no local matches and no prior sync stamp = brand-new device).
+          const localState = Store.getState();
+          const localHasContent = (localState && localState.matches && localState.matches.length > 0);
+          if (localUpdated > remoteUpdated && localHasContent) {
+            await push();
+            return;
+          }
+          if (localUpdated === 0 && !localHasContent) {
+            // Fresh device — adopt the cloud copy silently.
+            suppressAutoPush++;
+            try { Store.importState(body.data); }
+            finally {
+              setTimeout(() => { suppressAutoPush = Math.max(0, suppressAutoPush - 1); }, 0);
+            }
+            lastSyncedAt = Date.now();
+            setMeta(remoteUpdated, lastSyncedAt);
+            setStatus("ok");
+            return;
+          }
+          // Equal-ish — nothing to do.
+          lastSyncedAt = Date.now();
+          setMeta(remoteUpdated, lastSyncedAt);
+          setStatus("ok");
+        } catch (err) {
+          setStatus("error", String(err.message || err));
+        }
+      }
+
+      function copyCodeToClipboard(code) {
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(code);
+            return true;
+          }
+        } catch {}
+        return false;
+      }
+
+      return {
+        getCode, setCode, clearCode, isBound, generateCode,
+        push, pull, scheduleAutoPush, bootSync, status,
+        copyCodeToClipboard
+      };
+    })();
+
+    /* ---------- Cloud API: passed to roster view for the sync card ------- */
+    const cloudApi = {
+      status: () => Cloud.status(),
+      connect(code) {
+        if (!/^\d{6}$/.test(code)) return { ok: false, error: "Code must be exactly 6 digits." };
+        Cloud.setCode(code);
+        Cloud.bootSync();
+        return { ok: true };
+      },
+      disconnect() {
+        Modal.confirm({
+          title: "Disconnect cloud sync?",
+          message: "This device will stop syncing. Local data is kept. You can reconnect later with the same code.",
+          confirmLabel: "Disconnect",
+          danger: true,
+          onConfirm: () => { Cloud.clearCode(); render(); }
+        });
+      },
+      pushNow() { Cloud.push().then(() => render()); },
+      pullNow() {
+        Modal.confirm({
+          title: "Pull cloud copy?",
+          message: "Replace this device's data with whatever is in the cloud right now. This can't be undone.",
+          confirmLabel: "Pull & replace",
+          danger: true,
+          onConfirm: () => { Cloud.pull().then(() => render()); }
+        });
+      },
+      generate() {
+        const code = Cloud.generateCode();
+        const copied = Cloud.copyCodeToClipboard(code);
+        Cloud.setCode(code);
+        Cloud.bootSync();
+        return { code, copied };
+      },
+      copyCode() {
+        const c = Cloud.getCode();
+        if (!c) return false;
+        return Cloud.copyCodeToClipboard(c);
       }
     };
 
@@ -1841,8 +2162,118 @@
       root.appendChild(banner);
     }
 
+    /* ---------- Cloud sync card (Roster tab) ---------- */
+    function renderCloudCard(root, cloudApi) {
+      if (!cloudApi) return;
+      const st = cloudApi.status();
+      const card = el("section", { class: "card" });
+      const headRow = el("div", { class: "row" }, [
+        el("div", { class: "grow" }, [
+          el("h2", null, "Cloud sync"),
+          el("p", { class: "muted" },
+            st.bound
+              ? "Connected. Stats sync to every device using this code."
+              : "Type a 6-digit code on every device to share stats. Lose your phone, the data lives on.")
+        ]),
+        el("span", {
+          class: "cloud-status " + (st.bound ? (st.status === "syncing" ? "syncing" : (st.status === "error" ? "error" : "bound")) : "unbound")
+        }, st.bound ? (st.status === "syncing" ? "Syncing" : (st.status === "error" ? "Error" : "Linked")) : "Off")
+      ]);
+      card.appendChild(headRow);
+
+      if (!st.bound) {
+        // Not yet connected — show input + Generate.
+        const draft = { code: "" };
+        const codeInput = el("input", {
+          type: "text",
+          inputmode: "numeric",
+          pattern: "\\d{6}",
+          maxLength: 6,
+          autocomplete: "off",
+          placeholder: "123456",
+          class: "cloud-code-input",
+          "aria-label": "6-digit sync code",
+          onInput: (e) => {
+            const v = (e.target.value || "").replace(/\D/g, "").slice(0, 6);
+            e.target.value = v;
+            draft.code = v;
+            connectBtn.disabled = v.length !== 6;
+          }
+        });
+        const connectBtn = el("button", {
+          class: "btn btn-primary btn-block",
+          disabled: true,
+          onClick: () => {
+            const r = cloudApi.connect(draft.code);
+            if (!r.ok) {
+              Modal.confirm({ title: "Couldn't connect", message: r.error || "Try again.", confirmLabel: "OK", onConfirm: () => {} });
+              return;
+            }
+            render();
+          }
+        }, "Connect");
+        const generateBtn = el("button", {
+          class: "btn btn-block",
+          onClick: () => {
+            const r = cloudApi.generate();
+            Modal.confirm({
+              title: "New sync code",
+              message: "Your code is " + r.code + (r.copied ? " — copied to clipboard." : ".") +
+                "\n\nUse the same code on any other device to share stats.",
+              confirmLabel: "Got it",
+              onConfirm: () => { render(); }
+            });
+          }
+        }, "Generate new code");
+        card.appendChild(el("div", { class: "field" }, [
+          el("label", null, "Sync code"),
+          codeInput
+        ]));
+        card.appendChild(el("div", { class: "row settings-actions" }, [
+          connectBtn,
+          generateBtn
+        ]));
+        if (st.status === "error" && st.error) {
+          card.appendChild(el("p", { class: "muted small" }, "Last error: " + st.error));
+        }
+      } else {
+        const masked = st.code.slice(0, 3) + " " + st.code.slice(3);
+        card.appendChild(el("div", { class: "row" }, [
+          el("div", { class: "grow" }, [
+            el("div", { class: "muted small" }, "Code"),
+            el("div", { class: "cloud-code-display" }, masked)
+          ]),
+          el("button", {
+            class: "btn btn-sm",
+            onClick: () => {
+              const ok = cloudApi.copyCode();
+              Modal.confirm({
+                title: ok ? "Code copied" : "Code",
+                message: ok ? ("Sync code " + st.code + " copied to clipboard.")
+                            : ("Sync code: " + st.code),
+                confirmLabel: "OK",
+                onConfirm: () => {}
+              });
+            }
+          }, "Copy")
+        ]));
+        card.appendChild(el("div", { class: "row settings-actions" }, [
+          el("button", { class: "btn btn-block", onClick: () => cloudApi.pushNow() }, "↑ Push now"),
+          el("button", { class: "btn btn-block", onClick: () => cloudApi.pullNow() }, "↓ Pull from cloud")
+        ]));
+        card.appendChild(el("div", { class: "row settings-actions" }, [
+          el("button", { class: "btn btn-block", onClick: () => cloudApi.disconnect() }, "Disconnect")
+        ]));
+        const stamp = st.lastSyncedAt ? new Date(st.lastSyncedAt).toLocaleTimeString() : "—";
+        const summary = "Last synced: " + stamp +
+          (st.status === "error" ? (" · error: " + st.error) : "");
+        card.appendChild(el("p", { class: "muted small" }, summary));
+      }
+      root.appendChild(card);
+    }
+
     /* ---------- Roster ---------- */
-    function renderRoster(root, dataApi) {
+    function renderRoster(root, dataApi, cloudApi) {
       renderLiveBanner(root);
       const s = Store.getState();
       const card = el("section", { class: "card" }, [
@@ -1875,6 +2306,8 @@
       });
       card.appendChild(list);
       root.appendChild(card);
+
+      renderCloudCard(root, cloudApi);
 
       if (dataApi) {
         const settingsCard = el("section", { class: "card" }, [
