@@ -817,7 +817,7 @@
         id:           m.id,
         opponent:     m.opponent,
         date:         m.date,
-        matchLength:  clampInt(m.matchLength, MIN_LENGTH, MAX_LENGTH, DEFAULT_LENGTH),
+        matchLength:  clampInt(m.matchLength, 1, MAX_LENGTH, MIN_LENGTH),
         ourScore:     clampInt(m.ourScore, 0, 999, 0),
         theirScore:   clampInt(m.theirScore, 0, 999, 0),
         starters:     m.starters.slice(),
