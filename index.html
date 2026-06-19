@@ -177,6 +177,8 @@
   label { display: block; font-weight: 600; margin-bottom: 4px; font-size: 0.92rem; }
   input[type=text], input[type=number], input[type=date], select {
     width: 100%;
+    min-width: 0;
+    max-width: 100%;
     min-height: var(--tap);
     padding: 8px 10px;
     border: 1px solid var(--line);
@@ -184,8 +186,18 @@
     background: #fff;
     color: var(--ink);
     font-size: 16px;
+    font-family: inherit;
   }
   input[type=number] { font-variant-numeric: tabular-nums; }
+  /* iOS Safari renders <input type="date"> at its intrinsic content width
+     and ignores width:100% — this realigns it with sibling text inputs. */
+  input[type=date] {
+    -webkit-appearance: none;
+    appearance: none;
+    display: block;
+    text-align: left;
+  }
+  input[type=date]::-webkit-date-and-time-value { text-align: left; }
   input:focus, select:focus { outline: 2px solid var(--kw-yellow); outline-offset: 1px; border-color: var(--kw-navy); }
   .field { margin-bottom: 10px; }
   .field-row {
