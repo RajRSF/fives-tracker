@@ -1006,11 +1006,12 @@
           stats[e.player].red = true;
         }
       }
-      // Actual played minutes = ceil(elapsed-ms / 60s), clamped to allowed range.
-      // Saving the real duration (not the planned `lm.matchLength`) keeps
-      // minutes-played math honest and removes the upfront "guess the length" step.
+      // Actual played minutes = ceil(elapsed-ms / 60s), with floor of 1 (a
+      // 30-second test still saves as 1 min, not 10) and a ceiling at
+      // MAX_LENGTH (forgotten-running guard). MIN_LENGTH only governs the
+      // post-match backfill form, where a typed sub-10 value is likely a typo.
       const actualMs      = Math.max(0, liveElapsedMs());
-      const actualMinutes = clampInt(Math.ceil(actualMs / 60000), MIN_LENGTH, MAX_LENGTH, MIN_LENGTH);
+      const actualMinutes = clampInt(Math.ceil(actualMs / 60000), 1, MAX_LENGTH, 1);
 
       const saved = addMatch({
         opponent:    lm.opponent || "",
