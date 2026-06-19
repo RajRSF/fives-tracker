@@ -414,6 +414,24 @@
   .lineup-li { display: flex; align-items: center; gap: 8px; }
   .lineup-li .lineup-name { line-height: 1.2; }
   ul.clean { list-style: none; padding: 0; margin: 0; }
+  .goals-timeline .goal-row,
+  .goals-summary  .goal-row {
+    display: grid;
+    grid-template-columns: auto auto 1fr;
+    align-items: baseline; gap: 8px;
+    padding: 6px 8px; border-radius: var(--radius-sm);
+    border-left: 3px solid transparent;
+    background: #fafbfc;
+  }
+  .goals-timeline .goal-row + .goal-row,
+  .goals-summary  .goal-row + .goal-row { margin-top: 4px; }
+  .goals-summary .goal-row { grid-template-columns: 1fr auto; }
+  .goal-row.goal-us   { border-left-color: var(--win); }
+  .goal-row.goal-them { border-left-color: var(--loss); }
+  .goal-row .g-time { font-variant-numeric: tabular-nums; font-weight: 700; min-width: 2.4em; color: var(--muted); }
+  .goal-row .g-team { font-weight: 700; }
+  .goal-row .g-scorer { line-height: 1.25; }
+  .goal-row .g-tally  { font-variant-numeric: tabular-nums; color: var(--muted); }
   table.dash {
     width: 100%;
     border-collapse: collapse;
@@ -523,8 +541,12 @@
     align-items: center; gap: 8px;
     margin: 6px 0 10px;
   }
-  .live-hud .scoreline .side { text-align: center; }
-  .live-hud .scoreline .side .label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.12em; opacity: 0.85; }
+  .live-hud .scoreline .side { text-align: center; min-width: 0; }
+  .live-hud .scoreline .side .label {
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.02em; opacity: 0.9;
+    margin-bottom: 2px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
   .live-hud .scoreline .side .val { font-variant-numeric: tabular-nums; font-weight: 900; font-size: 2.6rem; line-height: 1; }
   .live-hud .scoreline .clock { font-variant-numeric: tabular-nums; font-weight: 900; font-size: 2rem; padding: 0 6px; color: var(--kw-yellow); }
   .live-hud .clock-row { display: flex; gap: 8px; }
@@ -718,6 +740,7 @@
   const DEFAULT_LENGTH  = 40;
   const MIN_LENGTH      = 10;
   const MAX_LENGTH      = 90;
+  const OUR_TEAM_NAME   = "KW Harriers";
 
   /* -------------------------- Utilities -------------------------------- */
   const $  = (sel, root) => (root || document).querySelector(sel);
@@ -895,10 +918,11 @@
       return true;
     }
     function normaliseMatch(m) {
+      const matchCap = clampInt(m.matchLength, 1, MAX_LENGTH, MIN_LENGTH);
       const subs = Array.isArray(m.subs) ? m.subs.map(s => ({
         off:    String(s.off),
         on:     String(s.on),
-        minute: clampInt(s.minute, 1, m.matchLength || MAX_LENGTH, 1)
+        minute: clampInt(s.minute, 1, matchCap, 1)
       })) : [];
       const stats = (m.stats && typeof m.stats === "object") ? m.stats : {};
       const cleanStats = {};
@@ -911,16 +935,30 @@
           red:     !!s.red
         };
       }
+      // Goals timeline (added in v1.1, optional) — older matches without
+      // goals[] just get an empty array and the detail view falls back to
+      // reconstructing scorers from `stats`.
+      const goals = Array.isArray(m.goals) ? m.goals.map(g => {
+        const minute = clampInt(g.minute, 0, matchCap, 0);
+        if (g.side === "them") return { side: "them", minute: minute };
+        return {
+          side:   "us",
+          minute: minute,
+          scorer: g.scorer != null ? String(g.scorer) : null,
+          assist: g.assist != null ? String(g.assist) : null
+        };
+      }) : [];
       return {
         id:           m.id,
         opponent:     m.opponent,
         date:         m.date,
-        matchLength:  clampInt(m.matchLength, 1, MAX_LENGTH, MIN_LENGTH),
+        matchLength:  matchCap,
         ourScore:     clampInt(m.ourScore, 0, 999, 0),
         theirScore:   clampInt(m.theirScore, 0, 999, 0),
         starters:     m.starters.slice(),
         subs:         subs,
         stats:        cleanStats,
+        goals:        goals,
         createdAt:    typeof m.createdAt === "string" ? m.createdAt : new Date().toISOString()
       };
     }
@@ -1111,6 +1149,13 @@
       const actualMs      = Math.max(0, liveElapsedMs());
       const actualMinutes = clampInt(Math.ceil(actualMs / 60000), 1, MAX_LENGTH, 1);
 
+      const goals = lm.events
+        .filter(e => e.kind === "goalUs" || e.kind === "goalThem")
+        .map(e => e.kind === "goalUs"
+          ? { side: "us", minute: e.minute, scorer: e.scorer || null, assist: e.assist || null }
+          : { side: "them", minute: e.minute })
+        .sort((a, b) => a.minute - b.minute);
+
       const saved = addMatch({
         opponent:    lm.opponent || "",
         date:        lm.date,
@@ -1119,7 +1164,8 @@
         theirScore:  theirScore,
         starters:    lm.starters.slice(),
         subs:        subs,
-        stats:       stats
+        stats:       stats,
+        goals:       goals
       });
       state.liveMatch = null;
       persist(); notify();
@@ -2651,6 +2697,61 @@
       ]);
       root.appendChild(head);
 
+      // Goals
+      const goalsCard = el("section", { class: "card detail-section" }, [el("h3", null, "Goals")]);
+      const hasTimeline = Array.isArray(m.goals) && m.goals.length > 0;
+      if (hasTimeline) {
+        const list = el("ul", { class: "clean goals-timeline" });
+        for (const g of m.goals.slice().sort((a, b) => a.minute - b.minute)) {
+          const minLabel = (g.minute || 0) + "′";
+          if (g.side === "us") {
+            const scorerName = g.scorer ? Store.playerName(g.scorer) : "(unknown)";
+            const assistTxt  = g.assist ? " (a: " + Store.playerName(g.assist) + ")" : "";
+            list.appendChild(el("li", { class: "goal-row goal-us" }, [
+              el("span", { class: "g-time" }, minLabel),
+              el("span", { class: "g-team" }, OUR_TEAM_NAME),
+              el("span", { class: "g-scorer" }, scorerName + assistTxt)
+            ]));
+          } else {
+            list.appendChild(el("li", { class: "goal-row goal-them" }, [
+              el("span", { class: "g-time" }, minLabel),
+              el("span", { class: "g-team" }, m.opponent || "Opponent"),
+              el("span", { class: "g-scorer muted" }, "—")
+            ]));
+          }
+        }
+        goalsCard.appendChild(list);
+      } else {
+        // Legacy match (saved before goals timeline existed) — reconstruct
+        // a scorer summary from per-player stats. No minutes, just totals.
+        const scorers = players
+          .filter(p => (m.stats[p.id]?.goals || 0) > 0 || (m.stats[p.id]?.assists || 0) > 0)
+          .map(p => ({ id: p.id, name: p.name, ...m.stats[p.id] }))
+          .sort((a, b) => (b.goals || 0) - (a.goals || 0));
+        if (m.ourScore === 0 && m.theirScore === 0) {
+          goalsCard.appendChild(el("p", { class: "muted" }, "No goals."));
+        } else {
+          const list = el("ul", { class: "clean goals-summary" });
+          for (const s of scorers) {
+            const parts = [];
+            if (s.goals)   parts.push(s.goals + "× ⚽");
+            if (s.assists) parts.push(s.assists + "× 🅰");
+            list.appendChild(el("li", { class: "goal-row goal-us" }, [
+              el("span", { class: "g-scorer" }, s.name),
+              el("span", { class: "g-tally" }, parts.join("  "))
+            ]));
+          }
+          if (m.theirScore > 0) {
+            list.appendChild(el("li", { class: "goal-row goal-them" }, [
+              el("span", { class: "g-scorer" }, (m.opponent || "Opponent")),
+              el("span", { class: "g-tally" }, m.theirScore + "× ⚽")
+            ]));
+          }
+          goalsCard.appendChild(list);
+        }
+      }
+      root.appendChild(goalsCard);
+
       // Lineup
       const lineup = el("section", { class: "card detail-section" }, [el("h3", null, "Lineup")]);
       const lineupItem = (name, kind) => el("li", { class: "lineup-li" }, [
@@ -2921,12 +3022,12 @@
         ]),
         el("div", { class: "scoreline" }, [
           el("div", { class: "side" }, [
-            el("div", { class: "label" }, "Us"),
+            el("div", { class: "label" }, OUR_TEAM_NAME),
             el("div", { class: "val" }, String(ourScore))
           ]),
           el("div", { class: "clock" }, fmtClock(elapsedMs)),
           el("div", { class: "side" }, [
-            el("div", { class: "label" }, "Them"),
+            el("div", { class: "label" }, lm.opponent || "Opponent"),
             el("div", { class: "val" }, String(theirScore))
           ])
         ]),
