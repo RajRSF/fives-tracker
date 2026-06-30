@@ -633,11 +633,14 @@
   .live-row .pchip.assist { background: var(--pitch-dark); }
   .live-row .pchip.yellow { background: var(--kw-yellow); color: var(--ink); }
   .live-row .pchip.red    { background: var(--loss); }
+  .live-row .pchip.keeper { background: var(--kw-yellow); color: var(--ink); font-size: 0.85rem; padding: 1px 6px; }
 
   .live-row.tappable { cursor: pointer; }
   .live-row.tappable:active { transform: scale(0.99); }
   .live-row.preselected { outline: 2px solid var(--warn); outline-offset: -2px; }
   .live-row.armed { background: #fff8e1; border-color: #e6c66a; }
+  .live-row.is-keeper { background: #fff8e1; border-color: var(--kw-yellow); }
+  .live-row .ptime.frozen { color: var(--muted); font-weight: 700; }
   .live-hint { margin: -4px 0 8px; font-size: 0.85rem; }
   .sub-toast {
     position: sticky; bottom: 12px;
@@ -3291,6 +3294,20 @@
       for (const [pid, start] of stintStart.entries()) {
         ms.set(pid, (ms.get(pid) || 0) + Math.max(0, elapsedMs - start));
       }
+      // Subtract goalie time — the ticker for a player should freeze while
+      // they're the active keeper. Mirrors MinutesEngine.computeMinutesByPlayer
+      // but in milliseconds and against the current elapsed clock. Open shifts
+      // (toMs===null) are capped at elapsedMs. (ISC-79, ISC-80.)
+      const shifts = Array.isArray(lm.goalieShifts) ? lm.goalieShifts : [];
+      for (const g of shifts) {
+        const from = Math.max(0, Math.min(elapsedMs, g.fromMs || 0));
+        const to   = (g.toMs === null || g.toMs === undefined)
+          ? elapsedMs
+          : Math.max(from, Math.min(elapsedMs, g.toMs));
+        const gMs = Math.max(0, to - from);
+        if (gMs <= 0) continue;
+        ms.set(g.playerId, Math.max(0, (ms.get(g.playerId) || 0) - gMs));
+      }
       return ms;
     }
 
@@ -3381,6 +3398,7 @@
         onPitchGrid.appendChild(buildLiveRow(p, i + 1, playMs.get(p.id) || 0, stats[p.id], "on-pitch", {
           tappable,
           preselected,
+          isKeeper: p.id === keeperId,
           onClick: tappable ? () => api.directSubFromPitch(p.id) : null
         }));
       });
@@ -3451,18 +3469,20 @@
     }
 
     function buildLiveRow(p, badge, playedMs, st, klass, opts) {
+      const o = opts || {};
       const meta = el("div", { class: "pmeta" });
+      if (o.isKeeper)       meta.appendChild(el("span", { class: "pchip keeper", title: "In goal" }, "🧤"));
       if (st && st.goals)   meta.appendChild(el("span", { class: "pchip goal"   }, st.goals + "⚽"));
       if (st && st.assists) meta.appendChild(el("span", { class: "pchip assist" }, st.assists + "🅰"));
       if (st && st.yellow)  meta.appendChild(el("span", { class: "pchip yellow" }, "🟨"));
       if (st && st.red)     meta.appendChild(el("span", { class: "pchip red"    }, "🟥"));
-      const o = opts || {};
       const initialsKlass = "pinitial sm " + (klass === "on-pitch" ? "starter" : "bench");
       const cls =
         "live-row " + klass +
         (o.tappable ? " tappable" : "") +
         (o.preselected ? " preselected" : "") +
-        (o.armed ? " armed" : "");
+        (o.armed ? " armed" : "") +
+        (o.isKeeper ? " is-keeper" : "");
       const attrs = { class: cls };
       if (o.onClick) {
         attrs.role = "button";
@@ -3475,7 +3495,7 @@
         el("span", { class: initialsKlass, "aria-hidden": "true" }, initialsOf(p.name)),
         el("span", { class: "pname" }, p.name),
         meta,
-        el("span", { class: "ptime scoreboard" }, fmtClock(playedMs))
+        el("span", { class: "ptime scoreboard" + (o.isKeeper ? " frozen" : "") }, fmtClock(playedMs))
       ]);
     }
 
