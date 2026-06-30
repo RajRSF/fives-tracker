@@ -2260,9 +2260,11 @@
         Store.removeLiveEvent(id);
       },
       // Direct-tap sub: tap an on-pitch row to mark them coming off, then tap a bench row to bring on.
+      // Subs are allowed while paused — the elapsed clock is frozen at pause time, so the sub's
+      // minute is recorded against that frozen value. Real coaches sub during stoppages.
       directSubFromPitch(pid) {
         const lm = Store.getLive();
-        if (!lm || lm.paused) return;
+        if (!lm) return;
         const onPitch = Store.liveOnPitch();
         if (!onPitch.has(pid)) return;
         // If a non-sub picker is open, ignore direct-tap. Otherwise hijack it.
@@ -2272,7 +2274,7 @@
       },
       directSubFromBench(pid) {
         const lm = Store.getLive();
-        if (!lm || lm.paused) return;
+        if (!lm) return;
         if (!livePicker || livePicker.kind !== "sub" || livePicker.step !== "on") return;
         const offId = livePicker.partial.off;
         if (!offId || pid === offId) return;
@@ -3379,12 +3381,12 @@
 
       const subPicking = !!(picker && picker.kind === "sub" && picker.step === "on");
       const preselectedOff = subPicking ? picker.partial.off : null;
-      const directSubsAvailable = !lm.paused;
+      // Subs are allowed while paused — coaches use the pause to make calm subs.
 
       const onPitchCard = el("section", { class: "card" }, [
         el("div", { class: "live-section-title" }, "On the pitch (" + onPitch.size + ")")
       ]);
-      if (directSubsAvailable && !picker) {
+      if (!picker) {
         onPitchCard.appendChild(el("p", { class: "muted live-hint" },
           "Tap a player on the pitch to start a sub."));
       } else if (subPicking) {
@@ -3393,7 +3395,7 @@
       }
       const onPitchGrid = el("div", { class: "live-roster-grid" });
       players.filter(p => onPitch.has(p.id)).forEach((p, i) => {
-        const tappable = directSubsAvailable && (!picker || subPicking);
+        const tappable = !picker || subPicking;
         const preselected = preselectedOff === p.id;
         onPitchGrid.appendChild(buildLiveRow(p, i + 1, playMs.get(p.id) || 0, stats[p.id], "on-pitch", {
           tappable,
@@ -3410,7 +3412,7 @@
       ]);
       const benchGrid = el("div", { class: "live-roster-grid" });
       players.filter(p => !onPitch.has(p.id)).forEach((p) => {
-        const armed = subPicking && directSubsAvailable;
+        const armed = subPicking;
         benchGrid.appendChild(buildLiveRow(p, "B", playMs.get(p.id) || 0, stats[p.id], "on-bench", {
           tappable: armed,
           armed,
