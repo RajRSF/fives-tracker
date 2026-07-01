@@ -589,7 +589,7 @@
   .picker-backdrop {
     position: fixed; inset: 0;
     background: rgba(15,23,42,0.55);
-    display: flex; align-items: flex-start; justify-content: center;
+    display: flex; align-items: center; justify-content: center;
     padding: 24px 16px;
     z-index: 50;
     overflow-y: auto;
@@ -2341,6 +2341,16 @@
         } else if (livePicker.kind === "sub") {
           if (livePicker.step === "off") {
             if (!onPitch.has(pid)) return;
+            // Bench-first flow: if `on` is already picked, this tap commits.
+            if (livePicker.partial.on) {
+              const onId = livePicker.partial.on;
+              if (pid === onId) return;
+              const ev = Store.appendLiveEvent({ kind: "sub", off: pid, on: onId });
+              if (ev) flashSubToast(ev.id, pid, onId);
+              livePicker = null;
+              render();
+              return;
+            }
             livePicker.partial.off = pid;
             livePicker.step = "on";
             render();
@@ -2387,7 +2397,9 @@
         if (lastSubToast && lastSubToast.eventId === id) clearSubToast();
         Store.removeLiveEvent(id);
       },
-      // Direct-tap sub: tap an on-pitch row to mark them coming off, then tap a bench row to bring on.
+      // Direct-tap sub: two entry points, either direction.
+      //   Pitch → bench: tap an on-pitch row (armed with off), then tap a bench row (commits).
+      //   Bench → pitch: tap a bench row (armed with on), then tap an on-pitch row (commits).
       // Subs are allowed while paused — the elapsed clock is frozen at pause time, so the sub's
       // minute is recorded against that frozen value. Real coaches sub during stoppages.
       directSubFromPitch(pid) {
@@ -2395,6 +2407,16 @@
         if (!lm) return;
         const onPitch = Store.liveOnPitch();
         if (!onPitch.has(pid)) return;
+        // If a bench-first sub is in flight, this tap commits it.
+        if (livePicker && livePicker.kind === "sub" && livePicker.step === "off" && livePicker.partial.on) {
+          const onId = livePicker.partial.on;
+          if (pid === onId) return;
+          const ev = Store.appendLiveEvent({ kind: "sub", off: pid, on: onId });
+          if (ev) flashSubToast(ev.id, pid, onId);
+          livePicker = null;
+          render();
+          return;
+        }
         // If a non-sub picker is open, ignore direct-tap. Otherwise hijack it.
         if (livePicker && livePicker.kind !== "sub") return;
         livePicker = { kind: "sub", step: "on", partial: { off: pid } };
@@ -2403,12 +2425,21 @@
       directSubFromBench(pid) {
         const lm = Store.getLive();
         if (!lm) return;
-        if (!livePicker || livePicker.kind !== "sub" || livePicker.step !== "on") return;
-        const offId = livePicker.partial.off;
-        if (!offId || pid === offId) return;
-        const ev = Store.appendLiveEvent({ kind: "sub", off: offId, on: pid });
-        if (ev) flashSubToast(ev.id, offId, pid);
-        livePicker = null;
+        const onPitch = Store.liveOnPitch();
+        if (onPitch.has(pid)) return;
+        // Pitch-first sub in flight → this tap commits (bench = coming on).
+        if (livePicker && livePicker.kind === "sub" && livePicker.step === "on" && livePicker.partial.off) {
+          const offId = livePicker.partial.off;
+          if (pid === offId) return;
+          const ev = Store.appendLiveEvent({ kind: "sub", off: offId, on: pid });
+          if (ev) flashSubToast(ev.id, offId, pid);
+          livePicker = null;
+          render();
+          return;
+        }
+        // Otherwise start a bench-first sub: coach picked who's coming ON, waiting for the OFF tap.
+        if (livePicker && livePicker.kind !== "sub") return;
+        livePicker = { kind: "sub", step: "off", partial: { on: pid } };
         render();
       },
       undoLastSub() {
@@ -3487,18 +3518,18 @@
         ])
       ]);
       // If a picker is active, dim the HUD so the picker owns the screen.
-      // Sub direct-tap mode keeps the roster grids bright below (higher
-      // z-index) — the coach still taps roster rows to pick players.
+      // Direct-tap sub flow (coach has already picked an off- or on-player
+      // by tapping a roster row) keeps roster grids bright below — the
+      // second tap lands there. All other picker states show a full-
+      // viewport backdrop with the picker floated center.
       const pickerActive = !!picker;
-      const subPickerActive = !!(picker && picker.kind === "sub");
+      const isDirectTapSub = !!(picker && picker.kind === "sub"
+                                && (picker.partial.off || picker.partial.on));
       if (pickerActive) hud.classList.add("dimmed");
       root.appendChild(hud);
 
-      // Action buttons (or picker if one is active). Non-sub pickers get a
-      // full-viewport backdrop overlay so the picker card floats center;
-      // sub pickers render inline so the roster grids stay the focus.
       if (pickerActive) {
-        if (subPickerActive) {
+        if (isDirectTapSub) {
           root.appendChild(renderLivePicker(picker, api));
         } else {
           root.appendChild(el("div", { class: "picker-backdrop", onClick: () => api.cancelPicker() },
@@ -3548,8 +3579,19 @@
         new Map(benchIds.map(id => [id, targets.get(id)]))
       );
 
-      const subPicking = !!(picker && picker.kind === "sub" && picker.step === "on");
-      const preselectedOff = subPicking ? picker.partial.off : null;
+      // Sub flow state (direct-tap):
+      //   pitchFirst: coach tapped an on-pitch player first → bench armed to pick who comes on.
+      //   benchFirst: coach tapped a bench player first    → on-pitch armed to pick who comes off.
+      const pitchFirstSub = !!(picker && picker.kind === "sub" && picker.step === "on"  && picker.partial.off);
+      const benchFirstSub = !!(picker && picker.kind === "sub" && picker.step === "off" && picker.partial.on);
+      const preselectedOff = pitchFirstSub ? picker.partial.off : null;
+      const preselectedOn  = benchFirstSub ? picker.partial.on  : null;
+      // On-pitch rows are tappable when no picker is open (start a pitch-first
+      // sub) OR when a bench-first sub is waiting for the off-tap.
+      const onPitchTappable = !picker || benchFirstSub || pitchFirstSub;
+      // Bench rows are tappable when no picker is open (start a bench-first
+      // sub) OR when a pitch-first sub is waiting for the on-tap.
+      const benchTappable   = !picker || pitchFirstSub || benchFirstSub;
       // Subs are allowed while paused — coaches use the pause to make calm subs.
 
       const onPitchCard = el("section", { class: "card" }, [
@@ -3557,23 +3599,27 @@
       ]);
       if (!picker) {
         onPitchCard.appendChild(el("p", { class: "muted live-hint" },
-          "Tap a player on the pitch to start a sub."));
-      } else if (subPicking) {
+          "Tap a player on the pitch or bench to start a sub."));
+      } else if (pitchFirstSub) {
         onPitchCard.appendChild(el("p", { class: "muted live-hint" },
-          "Pick a bench player below to bring on, or tap another on-pitch player to swap who's coming off."));
+          "Pick a bench player to bring on, or tap another on-pitch player to change who's coming off."));
+      } else if (benchFirstSub) {
+        onPitchCard.appendChild(el("p", { class: "muted live-hint" },
+          "Pick an on-pitch player to sub off, or tap another bench player to change who's coming on."));
       }
       const onPitchGrid = el("div", { class: "live-roster-grid" });
       players.filter(p => onPitch.has(p.id)).forEach((p, i) => {
-        const tappable = !picker || subPicking;
+        const armed = benchFirstSub;             // asking the coach to pick off-player
         const preselected = preselectedOff === p.id;
         onPitchGrid.appendChild(buildLiveRow(p, i + 1, playMs.get(p.id) || 0, stats[p.id], "on-pitch", {
-          tappable,
+          tappable: onPitchTappable,
           preselected,
+          armed,
           isKeeper: p.id === keeperId,
           target:  targets.get(p.id),
           starred: marksOnPitch.mostOwedId  === p.id,
           paused:  marksOnPitch.mostAheadId === p.id,
-          onClick: tappable ? () => api.directSubFromPitch(p.id) : null
+          onClick: onPitchTappable ? () => api.directSubFromPitch(p.id) : null
         }));
       });
       onPitchCard.appendChild(onPitchGrid);
@@ -3584,14 +3630,16 @@
       ]);
       const benchGrid = el("div", { class: "live-roster-grid" });
       players.filter(p => !onPitch.has(p.id)).forEach((p) => {
-        const armed = subPicking;
+        const armed = pitchFirstSub;             // asking the coach to pick on-player
+        const preselected = preselectedOn === p.id;
         benchGrid.appendChild(buildLiveRow(p, "B", playMs.get(p.id) || 0, stats[p.id], "on-bench", {
-          tappable: armed,
+          tappable: benchTappable,
           armed,
+          preselected,
           target:  targets.get(p.id),
           starred: marksBench.mostOwedId === p.id,
           paused:  false,  // "most ahead" is a sub-off signal — meaningless on bench
-          onClick: armed ? () => api.directSubFromBench(p.id) : null
+          onClick: benchTappable ? () => api.directSubFromBench(p.id) : null
         }));
       });
       benchCard.appendChild(benchGrid);
