@@ -581,6 +581,29 @@
     border: 0; font-weight: 700; min-height: 36px; padding: 0 12px;
     border-radius: var(--radius-sm);
   }
+  .live-hud.dimmed { opacity: 0.35; pointer-events: none; transition: opacity 0.12s ease-out; }
+
+  /* Picker backdrop — dims everything and floats the picker card centered.
+     Used by goal / card / swapKeeper pickers. Sub picker renders inline
+     because the roster grids are its primary tap targets. */
+  .picker-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(15,23,42,0.55);
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 24px 16px;
+    z-index: 50;
+    overflow-y: auto;
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+  }
+  .picker-modal {
+    width: 100%; max-width: 420px;
+    background: var(--paper);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+    overflow: hidden;
+  }
+  .picker-modal > .card { margin: 0; box-shadow: none; }
 
   .live-actions {
     display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;
@@ -781,6 +804,11 @@
   const SCHEMA_VERSION  = 1;
   const SQUAD_SIZE      = 8;
   const STARTERS_COUNT  = 5;
+  // Games run a little into overtime. Saved match length caps at
+  // `matchLength + OVERTIME_TOLERANCE` so a 25-min match that runs to
+  // 28:30 saves as 28 mins (not 30 → keeps season math clean; also not
+  // 25 → doesn't clip real minutes players just earned).
+  const OVERTIME_TOLERANCE = 5;
   const DEFAULT_LENGTH  = 25;
   const MIN_LENGTH      = 10;
   const MAX_LENGTH      = 90;
@@ -1255,10 +1283,14 @@
       }
       // Actual played minutes = ceil(elapsed-ms / 60s), with floor of 1 (a
       // 30-second test still saves as 1 min, not 10) and a ceiling at
-      // MAX_LENGTH (forgotten-running guard). MIN_LENGTH only governs the
-      // post-match backfill form, where a typed sub-10 value is likely a typo.
-      const actualMs      = Math.max(0, liveElapsedMs());
-      const actualMinutes = clampInt(Math.ceil(actualMs / 60000), 1, MAX_LENGTH, 1);
+      // planned matchLength + OVERTIME_TOLERANCE (games run slightly into
+      // overtime; anything past that is a forgotten-running match and
+      // shouldn't inflate season math). MAX_LENGTH is the hard-hard cap
+      // even if plannedLength is unusually high.
+      const actualMs = Math.max(0, liveElapsedMs());
+      const planned  = clampInt(lm.matchLength, MIN_LENGTH, MAX_LENGTH, DEFAULT_LENGTH);
+      const cap      = Math.min(MAX_LENGTH, planned + OVERTIME_TOLERANCE);
+      const actualMinutes = clampInt(Math.ceil(actualMs / 60000), 1, cap, 1);
 
       const goals = lm.events
         .filter(e => e.kind === "goalUs" || e.kind === "goalThem")
@@ -3454,11 +3486,28 @@
           el("button", { class: "btn btn-end", onClick: () => api.endMatch() }, "End match")
         ])
       ]);
+      // If a picker is active, dim the HUD so the picker owns the screen.
+      // Sub direct-tap mode keeps the roster grids bright below (higher
+      // z-index) — the coach still taps roster rows to pick players.
+      const pickerActive = !!picker;
+      const subPickerActive = !!(picker && picker.kind === "sub");
+      if (pickerActive) hud.classList.add("dimmed");
       root.appendChild(hud);
 
-      // Action buttons (or picker if one is active)
-      if (picker) {
-        root.appendChild(renderLivePicker(picker, api));
+      // Action buttons (or picker if one is active). Non-sub pickers get a
+      // full-viewport backdrop overlay so the picker card floats center;
+      // sub pickers render inline so the roster grids stay the focus.
+      if (pickerActive) {
+        if (subPickerActive) {
+          root.appendChild(renderLivePicker(picker, api));
+        } else {
+          root.appendChild(el("div", { class: "picker-backdrop", onClick: () => api.cancelPicker() },
+            el("div", {
+              class: "picker-modal",
+              onClick: (e) => { e.stopPropagation(); }
+            }, renderLivePicker(picker, api))
+          ));
+        }
       } else {
         const actions = el("div", { class: "live-actions" }, [
           el("button", { class: "btn btn-goal-us",   onClick: () => api.beginGoalUs()   }, "⚽ Goal — Us"),
@@ -3486,7 +3535,18 @@
       const targets = SeasonEngine.computeMatchTargets(
         allPlayerIds, lm.matchLength || DEFAULT_LENGTH, cumPlayed
       );
-      const marks = SeasonEngine.markPlayers(targets);
+      // Two marker scopes: on-pitch (who to keep on / sub off) and bench
+      // (who to sub on next). ⭐ appears on the most-owed of each scope;
+      // ⏸ (most-ahead) is on-pitch only — it's a sub-off signal, meaningless
+      // for a bench player.
+      const onPitchIds = players.filter(p => onPitch.has(p.id)).map(p => p.id);
+      const benchIds   = players.filter(p => !onPitch.has(p.id)).map(p => p.id);
+      const marksOnPitch = SeasonEngine.markPlayers(
+        new Map(onPitchIds.map(id => [id, targets.get(id)]))
+      );
+      const marksBench = SeasonEngine.markPlayers(
+        new Map(benchIds.map(id => [id, targets.get(id)]))
+      );
 
       const subPicking = !!(picker && picker.kind === "sub" && picker.step === "on");
       const preselectedOff = subPicking ? picker.partial.off : null;
@@ -3511,8 +3571,8 @@
           preselected,
           isKeeper: p.id === keeperId,
           target:  targets.get(p.id),
-          starred: marks.mostOwedId  === p.id,
-          paused:  marks.mostAheadId === p.id,
+          starred: marksOnPitch.mostOwedId  === p.id,
+          paused:  marksOnPitch.mostAheadId === p.id,
           onClick: tappable ? () => api.directSubFromPitch(p.id) : null
         }));
       });
@@ -3529,8 +3589,8 @@
           tappable: armed,
           armed,
           target:  targets.get(p.id),
-          starred: marks.mostOwedId  === p.id,
-          paused:  marks.mostAheadId === p.id,
+          starred: marksBench.mostOwedId === p.id,
+          paused:  false,  // "most ahead" is a sub-off signal — meaningless on bench
           onClick: armed ? () => api.directSubFromBench(p.id) : null
         }));
       });
