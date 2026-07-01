@@ -3517,28 +3517,21 @@
           el("button", { class: "btn btn-end", onClick: () => api.endMatch() }, "End match")
         ])
       ]);
-      // If a picker is active, dim the HUD so the picker owns the screen.
-      // Direct-tap sub flow (coach has already picked an off- or on-player
-      // by tapping a roster row) keeps roster grids bright below — the
-      // second tap lands there. All other picker states show a full-
-      // viewport backdrop with the picker floated center.
+      // If a picker is active, dim the HUD and float the picker card in a
+      // centered modal over a full-viewport backdrop. Tapping outside the
+      // card dismisses it. All picker kinds (sub / goal / card / keeper)
+      // share this treatment for consistency.
       const pickerActive = !!picker;
-      const isDirectTapSub = !!(picker && picker.kind === "sub"
-                                && (picker.partial.off || picker.partial.on));
       if (pickerActive) hud.classList.add("dimmed");
       root.appendChild(hud);
 
       if (pickerActive) {
-        if (isDirectTapSub) {
-          root.appendChild(renderLivePicker(picker, api));
-        } else {
-          root.appendChild(el("div", { class: "picker-backdrop", onClick: () => api.cancelPicker() },
-            el("div", {
-              class: "picker-modal",
-              onClick: (e) => { e.stopPropagation(); }
-            }, renderLivePicker(picker, api))
-          ));
-        }
+        root.appendChild(el("div", { class: "picker-backdrop", onClick: () => api.cancelPicker() },
+          el("div", {
+            class: "picker-modal",
+            onClick: (e) => { e.stopPropagation(); }
+          }, renderLivePicker(picker, api))
+        ));
       } else {
         const actions = el("div", { class: "live-actions" }, [
           el("button", { class: "btn btn-goal-us",   onClick: () => api.beginGoalUs()   }, "⚽ Goal — Us"),
