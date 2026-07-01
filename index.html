@@ -641,6 +641,21 @@
   .live-row.armed { background: #fff8e1; border-color: #e6c66a; }
   .live-row.is-keeper { background: #fff8e1; border-color: var(--kw-yellow); }
   .live-row .ptime.frozen { color: var(--muted); font-weight: 700; }
+  .live-row .prightcol {
+    display: flex; flex-direction: column; align-items: flex-end;
+    gap: 2px; min-width: 68px;
+  }
+  .live-row .ptarget {
+    font-size: 0.72rem; font-weight: 700; padding: 1px 6px; border-radius: 999px;
+    line-height: 1.4; white-space: nowrap;
+  }
+  .live-row .ptarget.owed { background: var(--kw-yellow); color: var(--ink); }
+  .live-row .ptarget.on   { background: #d1e7d3; color: #14532d; }
+  .live-row .ptarget.done { background: var(--pitch-dark); color: #fff; }
+  .live-row .ptarget.over { background: #eee; color: var(--muted); }
+  .live-row .ptarget.star   { outline: 2px solid var(--kw-yellow); outline-offset: 1px; }
+  .live-row .ptarget.ahead  { background: #eee; color: var(--muted); }
+  .live-row .ptarget.none { display: none; }
   .live-hint { margin: -4px 0 8px; font-size: 0.85rem; }
   .sub-toast {
     position: sticky; bottom: 12px;
@@ -766,7 +781,7 @@
   const SCHEMA_VERSION  = 1;
   const SQUAD_SIZE      = 8;
   const STARTERS_COUNT  = 5;
-  const DEFAULT_LENGTH  = 40;
+  const DEFAULT_LENGTH  = 25;
   const MIN_LENGTH      = 10;
   const MAX_LENGTH      = 90;
   const OUR_TEAM_NAME   = "KW Harriers";
@@ -1412,6 +1427,88 @@
   })();
 
   /* =========================================================================
+   * SeasonEngine — season-cumulative fair-share targets
+   * ======================================================================= *
+   * Playing minutes = outfield minutes (MinutesEngine already subtracts
+   * goalie time before returning per-player values, so cumulative sums
+   * only count outfield time — consistent with v1.2 ISC-74.)
+   *
+   * targetForMatch = clamp(equalShare + deficit, 0, plannedLength)
+   *   equalShare = plannedLength * STARTERS_COUNT / squadSize
+   *   deficit    = seasonAvg - cumPlayed[pid]
+   *
+   * When cumPlayed is balanced, deficit=0 for everyone → targets collapse
+   * to equalShare (Option A). When someone's behind, they get more; when
+   * someone's ahead, they get less.
+   * ======================================================================= */
+  const SeasonEngine = (function () {
+    /**
+     * seasonCumulativeMinutes — sum of playing minutes across all matches
+     * for every player in the squad. Playing = outfield minutes only.
+     */
+    function seasonCumulativeMinutes(matches, playerIds) {
+      const total = new Map();
+      for (const pid of playerIds) total.set(pid, 0);
+      for (const m of matches) {
+        const perMatch = MinutesEngine.computeMinutesByPlayer(
+          m.starters, m.subs || [], m.matchLength, m.goalieShifts || []
+        );
+        for (const [pid, mins] of perMatch.entries()) {
+          if (!total.has(pid)) continue;
+          total.set(pid, total.get(pid) + (mins || 0));
+        }
+      }
+      return total;
+    }
+
+    /**
+     * computeMatchTargets — how many minutes each player should play in the
+     * upcoming/current match to move the season toward equal.
+     * @returns Map<pid, { target, deficit, cumPlayed }>
+     */
+    function computeMatchTargets(playerIds, plannedLength, cumPlayed) {
+      const squadSize = Math.max(1, playerIds.length);
+      const equalShare = (plannedLength * STARTERS_COUNT) / squadSize;
+      let seasonAvg = 0;
+      for (const pid of playerIds) seasonAvg += (cumPlayed.get(pid) || 0);
+      seasonAvg = seasonAvg / squadSize;
+      const out = new Map();
+      for (const pid of playerIds) {
+        const cum = cumPlayed.get(pid) || 0;
+        const deficit = seasonAvg - cum;
+        const raw = equalShare + deficit;
+        const target = Math.max(0, Math.min(plannedLength, Math.round(raw)));
+        out.set(pid, { target, deficit: Math.round(deficit), cumPlayed: cum });
+      }
+      return out;
+    }
+
+    /**
+     * markPlayers — from the target map, pick the single most-owed
+     * (⭐ needs the most minutes) and single most-ahead (⏸ already over).
+     * Ties broken by playerId sort for determinism.
+     */
+    function markPlayers(targets) {
+      let mostOwed = null;   // largest positive deficit
+      let mostAhead = null;  // largest negative deficit (smallest number)
+      for (const [pid, t] of targets.entries()) {
+        if (t.deficit > 0 && (!mostOwed || t.deficit > mostOwed.deficit || (t.deficit === mostOwed.deficit && pid < mostOwed.pid))) {
+          mostOwed = { pid, deficit: t.deficit };
+        }
+        if (t.deficit < 0 && (!mostAhead || t.deficit < mostAhead.deficit || (t.deficit === mostAhead.deficit && pid < mostAhead.pid))) {
+          mostAhead = { pid, deficit: t.deficit };
+        }
+      }
+      return {
+        mostOwedId:  mostOwed  ? mostOwed.pid  : null,
+        mostAheadId: mostAhead ? mostAhead.pid : null
+      };
+    }
+
+    return { seasonCumulativeMinutes, computeMatchTargets, markPlayers };
+  })();
+
+  /* =========================================================================
    * App controller — tabs, ephemeral form state, render dispatch
    * ======================================================================= */
   const App = (function () {
@@ -1447,11 +1544,10 @@
     // Live setup form state (when no live match exists yet but user clicked "Start Live").
     let liveSetup = null;
     function newLiveSetup() {
-      const s = Store.getState();
       return {
         opponent:    "",
         date:        todayISO(),
-        matchLength: s.settings.defaultMatchLength || DEFAULT_LENGTH,
+        matchLength: DEFAULT_LENGTH,
         starters:    [],
         keeperId:    "",
         showForm:    false,
@@ -3379,6 +3475,19 @@
       const playMs = liveMillisecondsByPlayer();
       const stats = computeLiveStats(lm);
 
+      // Season fair-share targets — cumulative playing minutes ACROSS all
+      // saved matches (excluding the current live match, which hasn't ended
+      // yet). Playing time this match counts toward the visible progress via
+      // `playMs`, not toward the season total until end-match commits.
+      const allPlayerIds = players.map(p => p.id);
+      const cumPlayed = SeasonEngine.seasonCumulativeMinutes(
+        Store.getState().matches, allPlayerIds
+      );
+      const targets = SeasonEngine.computeMatchTargets(
+        allPlayerIds, lm.matchLength || DEFAULT_LENGTH, cumPlayed
+      );
+      const marks = SeasonEngine.markPlayers(targets);
+
       const subPicking = !!(picker && picker.kind === "sub" && picker.step === "on");
       const preselectedOff = subPicking ? picker.partial.off : null;
       // Subs are allowed while paused — coaches use the pause to make calm subs.
@@ -3401,6 +3510,9 @@
           tappable,
           preselected,
           isKeeper: p.id === keeperId,
+          target:  targets.get(p.id),
+          starred: marks.mostOwedId  === p.id,
+          paused:  marks.mostAheadId === p.id,
           onClick: tappable ? () => api.directSubFromPitch(p.id) : null
         }));
       });
@@ -3416,6 +3528,9 @@
         benchGrid.appendChild(buildLiveRow(p, "B", playMs.get(p.id) || 0, stats[p.id], "on-bench", {
           tappable: armed,
           armed,
+          target:  targets.get(p.id),
+          starred: marks.mostOwedId  === p.id,
+          paused:  marks.mostAheadId === p.id,
           onClick: armed ? () => api.directSubFromBench(p.id) : null
         }));
       });
@@ -3492,13 +3607,50 @@
         attrs.onClick = o.onClick;
         attrs.onKeyDown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); o.onClick(); } };
       }
+      // Fair-share target chip — shows minutes-still-owed this match vs the
+      // per-player target (playing minutes, so keeper time excluded).
+      // Colours: yellow = still owed >= 2m, green = within 1m of target, grey = over.
+      const targetChip = buildTargetChip(playedMs, o.target, o.starred, o.paused);
+      const rightCol = el("div", { class: "prightcol" }, [
+        el("span", { class: "ptime scoreboard" + (o.isKeeper ? " frozen" : "") }, fmtClock(playedMs)),
+        targetChip
+      ]);
       return el("div", attrs, [
         el("span", { class: "pos" }, String(badge)),
         el("span", { class: initialsKlass, "aria-hidden": "true" }, initialsOf(p.name)),
         el("span", { class: "pname" }, p.name),
         meta,
-        el("span", { class: "ptime scoreboard" + (o.isKeeper ? " frozen" : "") }, fmtClock(playedMs))
+        rightCol
       ]);
+    }
+
+    /**
+     * Fair-share chip: right of the live timer. Shows either the season
+     * marker (⭐ most-owed / ⏸ most-ahead) or the minutes-still-owed for
+     * this match. Keeper time already excluded — `playedMs` mirrors saved-
+     * match math (see liveMillisecondsByPlayer subtraction, ISC-80).
+     */
+    function buildTargetChip(playedMs, target, starred, paused) {
+      if (!target) return el("span", { class: "ptarget none" }, "");
+      const playedMin = Math.floor(playedMs / 60000);
+      const owed = target.target - playedMin;      // positive = still owed, negative = over
+      let text;
+      let state; // "owed" | "on" | "over" | "done"
+      if (playedMin >= target.target) {
+        text = "✓ " + target.target + "m";
+        state = "done";
+      } else if (owed <= 1) {
+        text = owed + "m";
+        state = "on";
+      } else {
+        text = "+" + owed + "m";
+        state = "owed";
+      }
+      const marker = starred ? "⭐ " : (paused ? "⏸ " : "");
+      return el("span", {
+        class: "ptarget " + state + (starred ? " star" : "") + (paused ? " ahead" : ""),
+        title: "Target " + target.target + "m this match · played " + playedMin + "m · season deficit " + target.deficit + "m"
+      }, marker + text);
     }
 
     function buildEventRow(ev, api) {
