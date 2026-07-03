@@ -804,6 +804,12 @@
   const SCHEMA_VERSION  = 1;
   const SQUAD_SIZE      = 8;
   const STARTERS_COUNT  = 5;
+  // Playing-minute budget per match uses the OUTFIELD count, not STARTERS.
+  // At any given minute, one of the 5 starters is the keeper and their
+  // playing-minute ticker is frozen (MinutesEngine subtracts keeper time).
+  // So the *outfield* budget is 4 minutes per real minute of match, not 5.
+  // See ISC-97 for the season fair-share correction.
+  const OUTFIELD_COUNT  = STARTERS_COUNT - 1;   // 4
   // Games run a little into overtime. Saved match length caps at
   // `matchLength + OVERTIME_TOLERANCE` so a 25-min match that runs to
   // 28:30 saves as 28 mins (not 30 → keeps season math clean; also not
@@ -1465,16 +1471,18 @@
    * goalie time before returning per-player values, so cumulative sums
    * only count outfield time — consistent with v1.2 ISC-74.)
    *
-   * Goal: sum of per-player targets must equal `plannedLength * STARTERS_COUNT`
-   * (the total playing-minutes a match provides) whenever that's physically
-   * achievable, so the coach can actually build a lineup that keeps 5 on the
-   * pitch for the full match. Naive `clamp(equalShare + deficit, 0, planned)`
-   * fails this: whenever a player hits the 0 or plannedLength ceiling the
-   * excess/shortfall isn't redistributed and the coach ends up with unallocated
-   * minutes (e.g. F,G,H clamped high, A..E clamped low → sum < 125).
+   * Goal: sum of per-player targets must equal `plannedLength * OUTFIELD_COUNT`
+   * (the total *outfield* minutes a match provides — one of the 5 starters is
+   * in goal at any given moment, and their playing-minute ticker is frozen)
+   * whenever that's physically achievable, so the coach can actually build a
+   * lineup that keeps 4 outfield + 1 keeper on the pitch for the full match.
+   * Naive `clamp(equalShare + deficit, 0, planned)` fails this: whenever a
+   * player hits the 0 or plannedLength ceiling the excess/shortfall isn't
+   * redistributed and the coach ends up with unallocated minutes (e.g. F,G,H
+   * clamped high, A..E clamped low → sum < 100 for a 25-min match).
    *
-   * Waterfall projection algorithm (ISC-95):
-   *   1. providable = plannedLength * STARTERS_COUNT
+   * Waterfall projection algorithm (ISC-95, corrected in ISC-97):
+   *   1. providable = plannedLength * OUTFIELD_COUNT
    *   2. Repeatedly:
    *        remaining = providable - sum(locked targets)
    *        fairAfter = (sum(cumPlayed[unlocked]) + remaining) / count(unlocked)
@@ -1526,7 +1534,7 @@
         out.set("_meta", { insufficient: false, unallocated: 0 });
         return out;
       }
-      const providable = plannedLength * STARTERS_COUNT;
+      const providable = plannedLength * OUTFIELD_COUNT;
 
       // Working state: each player either locked (final target set) or open (still being solved).
       const locked = new Map();     // pid → target
