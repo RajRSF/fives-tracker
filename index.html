@@ -675,7 +675,7 @@
   .live-row .ptarget.owed { background: var(--kw-yellow); color: var(--ink); }
   .live-row .ptarget.on   { background: #d1e7d3; color: #14532d; }
   .live-row .ptarget.done { background: var(--pitch-dark); color: #fff; }
-  .live-row .ptarget.over { background: #eee; color: var(--muted); }
+  .live-row .ptarget.over { background: #f8d7da; color: #7a1d1d; }
   .live-row .ptarget.star   { outline: 2px solid var(--kw-yellow); outline-offset: 1px; }
   .live-row .ptarget.ahead  { background: #eee; color: var(--muted); }
   .live-row .ptarget.none { display: none; }
@@ -1465,13 +1465,24 @@
    * goalie time before returning per-player values, so cumulative sums
    * only count outfield time — consistent with v1.2 ISC-74.)
    *
-   * targetForMatch = clamp(equalShare + deficit, 0, plannedLength)
-   *   equalShare = plannedLength * STARTERS_COUNT / squadSize
-   *   deficit    = seasonAvg - cumPlayed[pid]
+   * Goal: sum of per-player targets must equal `plannedLength * STARTERS_COUNT`
+   * (the total playing-minutes a match provides) whenever that's physically
+   * achievable, so the coach can actually build a lineup that keeps 5 on the
+   * pitch for the full match. Naive `clamp(equalShare + deficit, 0, planned)`
+   * fails this: whenever a player hits the 0 or plannedLength ceiling the
+   * excess/shortfall isn't redistributed and the coach ends up with unallocated
+   * minutes (e.g. F,G,H clamped high, A..E clamped low → sum < 125).
    *
-   * When cumPlayed is balanced, deficit=0 for everyone → targets collapse
-   * to equalShare (Option A). When someone's behind, they get more; when
-   * someone's ahead, they get less.
+   * Waterfall projection algorithm (ISC-95):
+   *   1. providable = plannedLength * STARTERS_COUNT
+   *   2. Repeatedly:
+   *        remaining = providable - sum(locked targets)
+   *        fairAfter = (sum(cumPlayed[unlocked]) + remaining) / count(unlocked)
+   *        For each unlocked p: raw = fairAfter - cum[p]
+   *        Lock any raw >= plannedLength at plannedLength; any raw <= 0 at 0.
+   *      until no new locks fire.
+   *   3. Any leftover minutes (all remaining players would clamp) surface as
+   *      an unallocated tail — flagged via `insufficient=true` on the result.
    * ======================================================================= */
   const SeasonEngine = (function () {
     /**
@@ -1496,22 +1507,102 @@
     /**
      * computeMatchTargets — how many minutes each player should play in the
      * upcoming/current match to move the season toward equal.
+     *
+     * Uses waterfall projection so sum(target) == plannedLength * STARTERS_COUNT
+     * whenever physically achievable. See header comment for algorithm.
+     *
      * @returns Map<pid, { target, deficit, cumPlayed }>
+     *   The result also carries a hidden `_meta` entry with { insufficient,
+     *   unallocated } describing whether the season is too imbalanced to
+     *   redistribute in one match.
      */
     function computeMatchTargets(playerIds, plannedLength, cumPlayed) {
-      const squadSize = Math.max(1, playerIds.length);
-      const equalShare = (plannedLength * STARTERS_COUNT) / squadSize;
-      let seasonAvg = 0;
-      for (const pid of playerIds) seasonAvg += (cumPlayed.get(pid) || 0);
-      seasonAvg = seasonAvg / squadSize;
       const out = new Map();
-      for (const pid of playerIds) {
-        const cum = cumPlayed.get(pid) || 0;
-        const deficit = seasonAvg - cum;
-        const raw = equalShare + deficit;
-        const target = Math.max(0, Math.min(plannedLength, Math.round(raw)));
-        out.set(pid, { target, deficit: Math.round(deficit), cumPlayed: cum });
+      const squadSize = playerIds.length;
+      if (squadSize === 0 || plannedLength <= 0) {
+        for (const pid of playerIds) {
+          out.set(pid, { target: 0, deficit: 0, cumPlayed: cumPlayed.get(pid) || 0 });
+        }
+        out.set("_meta", { insufficient: false, unallocated: 0 });
+        return out;
       }
+      const providable = plannedLength * STARTERS_COUNT;
+
+      // Working state: each player either locked (final target set) or open (still being solved).
+      const locked = new Map();     // pid → target
+      const openSet = new Set(playerIds);
+
+      // Waterfall: keep locking clampers and redistributing until quiescent.
+      // Bound iterations at squadSize to guarantee termination.
+      for (let iter = 0; iter < squadSize + 1 && openSet.size > 0; iter++) {
+        let usedLocked = 0;
+        for (const v of locked.values()) usedLocked += v;
+        const remaining = providable - usedLocked;
+
+        let sumCumOpen = 0;
+        for (const pid of openSet) sumCumOpen += (cumPlayed.get(pid) || 0);
+        const fairAfter = (sumCumOpen + remaining) / openSet.size;
+
+        const newlyLocked = [];
+        for (const pid of openSet) {
+          const cum = cumPlayed.get(pid) || 0;
+          const raw = fairAfter - cum;
+          if (raw >= plannedLength) newlyLocked.push([pid, plannedLength]);
+          else if (raw <= 0)        newlyLocked.push([pid, 0]);
+        }
+        if (newlyLocked.length === 0) {
+          // No new clamps — assign the current fair share to every open player.
+          for (const pid of openSet) {
+            const cum = cumPlayed.get(pid) || 0;
+            const raw = fairAfter - cum;
+            locked.set(pid, Math.max(0, Math.min(plannedLength, raw)));
+          }
+          openSet.clear();
+          break;
+        }
+        for (const [pid, val] of newlyLocked) {
+          locked.set(pid, val);
+          openSet.delete(pid);
+        }
+      }
+
+      // Emit rounded targets and compute the true unallocated tail (using
+      // *unrounded* locks so we detect physical impossibility, not rounding).
+      let sumLocked = 0;
+      for (const v of locked.values()) sumLocked += v;
+      const unallocatedUnrounded = Math.max(0, providable - sumLocked);
+      const insufficient = unallocatedUnrounded > 0.5;   // >0.5 min = real gap, not rounding
+      let seasonAvgSum = 0;
+      for (const pid of playerIds) seasonAvgSum += (cumPlayed.get(pid) || 0);
+      const seasonAvg = seasonAvgSum / squadSize;
+
+      // Rounded distribution with residual-carry so integer sum equals the
+      // unrounded sum (prevents "16+16+16+... = 128 for a 125-min match").
+      const ids = playerIds.slice();
+      const floats = ids.map(pid => locked.get(pid) || 0);
+      const rounded = floats.map(v => Math.floor(v));
+      let deficitLeft = Math.round(floats.reduce((a, b) => a + b, 0)) - rounded.reduce((a, b) => a + b, 0);
+      // Distribute the +1s to the largest fractional parts first (standard largest-remainder).
+      const fracOrder = ids
+        .map((pid, i) => ({ i, frac: floats[i] - Math.floor(floats[i]), pid }))
+        .sort((a, b) => (b.frac - a.frac) || (a.pid < b.pid ? -1 : 1));
+      for (let k = 0; k < fracOrder.length && deficitLeft > 0; k++) {
+        if (rounded[fracOrder[k].i] < plannedLength) {
+          rounded[fracOrder[k].i]++;
+          deficitLeft--;
+        }
+      }
+
+      for (let i = 0; i < ids.length; i++) {
+        const pid = ids[i];
+        const cum = cumPlayed.get(pid) || 0;
+        out.set(pid, {
+          target: rounded[i],
+          deficit: Math.round(seasonAvg - cum),
+          cumPlayed: cum
+        });
+      }
+      out.set("_meta", { insufficient, unallocated: Math.round(unallocatedUnrounded) });
       return out;
     }
 
@@ -1524,6 +1615,7 @@
       let mostOwed = null;   // largest positive deficit
       let mostAhead = null;  // largest negative deficit (smallest number)
       for (const [pid, t] of targets.entries()) {
+        if (pid === "_meta") continue;  // ignore metadata sentinel
         if (t.deficit > 0 && (!mostOwed || t.deficit > mostOwed.deficit || (t.deficit === mostOwed.deficit && pid < mostOwed.pid))) {
           mostOwed = { pid, deficit: t.deficit };
         }
@@ -3559,6 +3651,13 @@
       const targets = SeasonEngine.computeMatchTargets(
         allPlayerIds, lm.matchLength || DEFAULT_LENGTH, cumPlayed
       );
+      const targetMeta = targets.get("_meta") || { insufficient: false, unallocated: 0 };
+      if (targetMeta.insufficient && targetMeta.unallocated > 0) {
+        root.appendChild(el("div", { class: "muted live-hint" },
+          "⚠ Season imbalance too large to rebalance this match — " +
+          targetMeta.unallocated + "m unallocated. Distribute those minutes across on-pitch players as you see fit."
+        ));
+      }
       // Two marker scopes: on-pitch (who to keep on / sub off) and bench
       // (who to sub on next). ⭐ appears on the most-owed of each scope;
       // ⏸ (most-ahead) is on-pitch only — it's a sub-off signal, meaningless
@@ -3736,8 +3835,13 @@
       const playedMin = Math.floor(playedMs / 60000);
       const owed = target.target - playedMin;      // positive = still owed, negative = over
       let text;
-      let state; // "owed" | "on" | "over" | "done"
-      if (playedMin >= target.target) {
+      let state; // "owed" | "on" | "done" | "over"
+      if (playedMin > target.target) {
+        // Coach has kept them on past their target — surface the drift live so
+        // it doesn't hide behind a static "done" pill (ISC-96).
+        text = "+" + (playedMin - target.target) + "m over";
+        state = "over";
+      } else if (playedMin === target.target) {
         text = "✓ " + target.target + "m";
         state = "done";
       } else if (owed <= 1) {
