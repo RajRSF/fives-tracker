@@ -413,35 +413,68 @@
   .pill.L { background: var(--loss); }
 
   /* ---------- Match detail ---------- */
-  .detail-section { margin-top: 14px; }
-  .detail-section h3 { margin-bottom: 6px; }
+  .detail-section { margin-top: 8px; }
+  .detail-section h3 { margin: 0 0 6px; font-size: 0.95rem; }
+  .match-hero {
+    display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+  }
+  .match-hero .m-score {
+    font-size: 1.9rem; line-height: 1;
+  }
+  .match-hero .m-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .match-hero .m-meta .m-opponent { font-weight: 800; font-size: 1.05rem; line-height: 1.15; }
+  .match-hero .m-meta .m-sub { color: var(--muted); font-size: 0.82rem; }
+  .match-hero .m-result { margin-left: auto; }
   .lineup-grid {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px;
   }
   .lineup-grid .col h4 {
-    margin: 0 0 4px; font-size: 0.8rem; text-transform: uppercase;
+    margin: 0 0 4px; font-size: 0.75rem; text-transform: uppercase;
     color: var(--muted); letter-spacing: 0.06em;
   }
-  .lineup-grid li { padding: 4px 0; }
+  .lineup-grid li { padding: 2px 0; }
   .lineup-li { display: flex; align-items: center; gap: 8px; }
   .lineup-li .lineup-name { line-height: 1.2; }
   ul.clean { list-style: none; padding: 0; margin: 0; }
-  .goals-timeline .goal-row,
-  .goals-summary  .goal-row {
+  .dna-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .dna-pill {
+    background: #eef2f7; color: var(--muted);
+    border-radius: 999px; padding: 3px 10px; font-size: 0.78rem;
+  }
+
+  /* Timeline: unified goals + subs. Compact row per event, colour-coded on the
+     left edge so scanning down the list separates own goals from opponent
+     goals from substitutions at a glance. */
+  .timeline { display: flex; flex-direction: column; gap: 4px; }
+  .tl-row {
     display: grid;
     grid-template-columns: auto auto 1fr;
     align-items: baseline; gap: 8px;
-    padding: 6px 8px; border-radius: var(--radius-sm);
+    padding: 5px 8px; border-radius: var(--radius-sm);
+    border-left: 3px solid transparent;
+    background: #fafbfc;
+    font-size: 0.9rem; line-height: 1.25;
+  }
+  .tl-row.tl-goal-us   { border-left-color: var(--win); }
+  .tl-row.tl-goal-them { border-left-color: var(--loss); }
+  .tl-row.tl-sub       { border-left-color: var(--kw-yellow); background: #fffdf5; }
+  .tl-row .tl-time { font-variant-numeric: tabular-nums; font-weight: 700; min-width: 2.4em; color: var(--muted); }
+  .tl-row .tl-icon { font-size: 0.95rem; }
+  .tl-row .tl-text { min-width: 0; }
+  .tl-row .tl-text .tl-assist { color: var(--muted); font-size: 0.8rem; }
+  .tl-row .tl-text .tl-arrow  { color: var(--muted); padding: 0 4px; }
+
+  /* Legacy no-timeline fallback: scorer tally as summary. */
+  .goals-summary .goal-row {
+    display: grid; grid-template-columns: 1fr auto;
+    align-items: baseline; gap: 8px;
+    padding: 5px 8px; border-radius: var(--radius-sm);
     border-left: 3px solid transparent;
     background: #fafbfc;
   }
-  .goals-timeline .goal-row + .goal-row,
-  .goals-summary  .goal-row + .goal-row { margin-top: 4px; }
-  .goals-summary .goal-row { grid-template-columns: 1fr auto; }
+  .goals-summary .goal-row + .goal-row { margin-top: 4px; }
   .goal-row.goal-us   { border-left-color: var(--win); }
   .goal-row.goal-them { border-left-color: var(--loss); }
-  .goal-row .g-time { font-variant-numeric: tabular-nums; font-weight: 700; min-width: 2.4em; color: var(--muted); }
-  .goal-row .g-team { font-weight: 700; }
   .goal-row .g-scorer { line-height: 1.25; }
   .goal-row .g-tally  { font-variant-numeric: tabular-nums; color: var(--muted); }
   table.dash {
@@ -3194,111 +3227,30 @@
       const starterSet = new Set(m.starters);
       const benchPlayers = players.filter(p => !starterSet.has(p.id));
 
+      // Hero: compact single-card block. Score + opponent + result pill in
+      // one row; back/delete row above; date/length in the metadata sub-line.
+      // Replaces the 5-row stacked layout that ate ~180px of vertical space.
+      const noShow = players.filter(p => !appeared.has(p.id));
       const head = el("section", { class: "card" }, [
         el("div", { class: "row" }, [
           el("button", { class: "btn btn-ghost btn-sm", onClick: onBack }, "← Back"),
           el("div", { class: "grow" }),
           el("button", { class: "btn btn-danger btn-sm", onClick: () => onDelete(m.id) }, "Delete")
         ]),
-        el("h2", { style: "margin-top:8px;" }, ["vs ", m.opponent]),
-        el("div", { class: "muted" }, [fmtDate(m.date), "  ·  ", `${m.matchLength} min`]),
-        el("div", { class: "score scoreboard", style: "font-size:2rem; margin-top:6px;" },
-          `${m.ourScore} – ${m.theirScore}`),
-        el("div", { style: "margin-top:4px;" }, el("span", { class: "pill " + r }, r === "W" ? "Win" : (r === "D" ? "Draw" : "Loss")))
+        el("div", { class: "match-hero" }, [
+          el("div", { class: "m-score scoreboard" }, `${m.ourScore} – ${m.theirScore}`),
+          el("div", { class: "m-meta" }, [
+            el("div", { class: "m-opponent" }, "vs " + m.opponent),
+            el("div", { class: "m-sub" }, fmtDate(m.date) + " · " + m.matchLength + " min")
+          ]),
+          el("div", { class: "m-result" }, el("span", { class: "pill " + r },
+            r === "W" ? "Win" : (r === "D" ? "Draw" : "Loss")))
+        ])
       ]);
       root.appendChild(head);
 
-      // Goals
-      const goalsCard = el("section", { class: "card detail-section" }, [el("h3", null, "Goals")]);
-      const hasTimeline = Array.isArray(m.goals) && m.goals.length > 0;
-      if (hasTimeline) {
-        const list = el("ul", { class: "clean goals-timeline" });
-        for (const g of m.goals.slice().sort((a, b) => a.minute - b.minute)) {
-          const minLabel = (g.minute || 0) + "′";
-          if (g.side === "us") {
-            const scorerName = g.scorer ? Store.playerName(g.scorer) : "(unknown)";
-            const assistTxt  = g.assist ? " (a: " + Store.playerName(g.assist) + ")" : "";
-            list.appendChild(el("li", { class: "goal-row goal-us" }, [
-              el("span", { class: "g-time" }, minLabel),
-              el("span", { class: "g-team" }, OUR_TEAM_NAME),
-              el("span", { class: "g-scorer" }, scorerName + assistTxt)
-            ]));
-          } else {
-            list.appendChild(el("li", { class: "goal-row goal-them" }, [
-              el("span", { class: "g-time" }, minLabel),
-              el("span", { class: "g-team" }, m.opponent || "Opponent"),
-              el("span", { class: "g-scorer muted" }, "—")
-            ]));
-          }
-        }
-        goalsCard.appendChild(list);
-      } else {
-        // Legacy match (saved before goals timeline existed) — reconstruct
-        // a scorer summary from per-player stats. No minutes, just totals.
-        const scorers = players
-          .filter(p => (m.stats[p.id]?.goals || 0) > 0 || (m.stats[p.id]?.assists || 0) > 0)
-          .map(p => ({ id: p.id, name: p.name, ...m.stats[p.id] }))
-          .sort((a, b) => (b.goals || 0) - (a.goals || 0));
-        if (m.ourScore === 0 && m.theirScore === 0) {
-          goalsCard.appendChild(el("p", { class: "muted" }, "No goals."));
-        } else {
-          const list = el("ul", { class: "clean goals-summary" });
-          for (const s of scorers) {
-            const parts = [];
-            if (s.goals)   parts.push(s.goals + "× ⚽");
-            if (s.assists) parts.push(s.assists + "× 🅰");
-            list.appendChild(el("li", { class: "goal-row goal-us" }, [
-              el("span", { class: "g-scorer" }, s.name),
-              el("span", { class: "g-tally" }, parts.join("  "))
-            ]));
-          }
-          if (m.theirScore > 0) {
-            list.appendChild(el("li", { class: "goal-row goal-them" }, [
-              el("span", { class: "g-scorer" }, (m.opponent || "Opponent")),
-              el("span", { class: "g-tally" }, m.theirScore + "× ⚽")
-            ]));
-          }
-          goalsCard.appendChild(list);
-        }
-      }
-      root.appendChild(goalsCard);
-
-      // Lineup
-      const lineup = el("section", { class: "card detail-section" }, [el("h3", null, "Lineup")]);
-      const lineupItem = (name, kind) => el("li", { class: "lineup-li" }, [
-        el("span", { class: "pinitial sm " + kind, "aria-hidden": "true" }, initialsOf(name)),
-        el("span", { class: "lineup-name" }, name)
-      ]);
-      const grid = el("div", { class: "lineup-grid" }, [
-        el("div", { class: "col" }, [
-          el("h4", null, "Starters"),
-          el("ul", { class: "clean" }, m.starters.map(id =>
-            lineupItem(Store.playerName(id), "starter")))
-        ]),
-        el("div", { class: "col" }, [
-          el("h4", null, "Bench"),
-          el("ul", { class: "clean" }, benchPlayers.map(p =>
-            lineupItem(p.name, "bench")))
-        ])
-      ]);
-      lineup.appendChild(grid);
-      root.appendChild(lineup);
-
-      // Subs
-      const subsCard = el("section", { class: "card detail-section" }, [el("h3", null, "Substitutions")]);
-      if (m.subs.length === 0) {
-        subsCard.appendChild(el("p", { class: "muted" }, "No subs."));
-      } else {
-        const list = el("ul", { class: "clean" });
-        for (const s of m.subs.slice().sort((a, b) => a.minute - b.minute)) {
-          list.appendChild(el("li", null,
-            `${s.minute}′  —  ${Store.playerName(s.off)} OFF · ${Store.playerName(s.on)} ON`));
-        }
-        subsCard.appendChild(list);
-      }
-      root.appendChild(subsCard);
-
-      // Per-player stats
+      // Per-player stats — surfaced first because it's the primary artifact
+      // the coach cares about post-match (mins played, goals, assists, cards).
       const statsCard = el("section", { class: "card detail-section" }, [el("h3", null, "Per-player stats")]);
       const tbl = el("table", { class: "dash" }, [
         el("thead", null, [
@@ -3322,7 +3274,7 @@
             const nameCell = gMin > 0
               ? el("td", null, [
                   el("div", null, p.name),
-                  el("div", { class: "muted small" }, "🧤 Time in goal: " + gMin + "m")
+                  el("div", { class: "muted small" }, "🧤 " + gMin + "m in goal")
                 ])
               : el("td", null, p.name);
             return el("tr", null, [
@@ -3335,17 +3287,115 @@
           }))
       ]);
       statsCard.appendChild(tbl);
+      // Did-not-appear pill row nested inside the stats card — same context,
+      // no dedicated section overhead.
+      if (noShow.length > 0) {
+        statsCard.appendChild(el("div", {
+          class: "muted small",
+          style: "margin: 8px 0 4px;"
+        }, "Did not appear"));
+        statsCard.appendChild(el("div", { class: "dna-row" },
+          noShow.map(p => el("span", { class: "dna-pill" }, p.name))
+        ));
+      }
       root.appendChild(statsCard);
 
-      // Bench-only (did not appear) summary, for completeness
-      const noShow = players.filter(p => !appeared.has(p.id));
-      if (noShow.length > 0) {
-        const nsCard = el("section", { class: "card detail-section" }, [
-          el("h3", null, "Did not appear"),
-          el("ul", { class: "clean" }, noShow.map(p => el("li", null, p.name)))
-        ]);
-        root.appendChild(nsCard);
+      // Unified timeline: goals + subs, chronological, single scannable list.
+      // Colour-coded left border keeps the three kinds distinct at a glance.
+      // Falls back to a scorer summary for legacy matches without a goals
+      // timeline (pre-v1.2 saves).
+      const timelineCard = el("section", { class: "card detail-section" }, [el("h3", null, "Timeline")]);
+      const hasTimeline = Array.isArray(m.goals) && m.goals.length > 0;
+      const eventsForTimeline = [];
+      if (hasTimeline) {
+        for (const g of m.goals) eventsForTimeline.push({ minute: g.minute || 0, kind: "goal", g });
       }
+      for (const s of (m.subs || [])) eventsForTimeline.push({ minute: s.minute || 0, kind: "sub", s });
+      eventsForTimeline.sort((a, b) => a.minute - b.minute);
+
+      if (eventsForTimeline.length === 0 && !hasTimeline) {
+        // Legacy fallback — no per-minute events at all. Show scorer summary.
+        const scorers = players
+          .filter(p => (m.stats[p.id]?.goals || 0) > 0 || (m.stats[p.id]?.assists || 0) > 0)
+          .map(p => ({ id: p.id, name: p.name, ...m.stats[p.id] }))
+          .sort((a, b) => (b.goals || 0) - (a.goals || 0));
+        if (m.ourScore === 0 && m.theirScore === 0 && (m.subs || []).length === 0) {
+          timelineCard.appendChild(el("p", { class: "muted" }, "No events."));
+        } else {
+          const list = el("ul", { class: "clean goals-summary" });
+          for (const s of scorers) {
+            const parts = [];
+            if (s.goals)   parts.push(s.goals + "× ⚽");
+            if (s.assists) parts.push(s.assists + "× 🅰");
+            list.appendChild(el("li", { class: "goal-row goal-us" }, [
+              el("span", { class: "g-scorer" }, s.name),
+              el("span", { class: "g-tally" }, parts.join("  "))
+            ]));
+          }
+          if (m.theirScore > 0) {
+            list.appendChild(el("li", { class: "goal-row goal-them" }, [
+              el("span", { class: "g-scorer" }, (m.opponent || "Opponent")),
+              el("span", { class: "g-tally" }, m.theirScore + "× ⚽")
+            ]));
+          }
+          timelineCard.appendChild(list);
+        }
+      } else {
+        const list = el("div", { class: "timeline" });
+        for (const ev of eventsForTimeline) {
+          const minLabel = ev.minute + "′";
+          if (ev.kind === "goal" && ev.g.side === "us") {
+            const scorerName = ev.g.scorer ? Store.playerName(ev.g.scorer) : "(unknown)";
+            const assist = ev.g.assist
+              ? el("span", { class: "tl-assist" }, " (a: " + Store.playerName(ev.g.assist) + ")")
+              : null;
+            list.appendChild(el("div", { class: "tl-row tl-goal-us" }, [
+              el("span", { class: "tl-time" }, minLabel),
+              el("span", { class: "tl-icon" }, "⚽"),
+              el("span", { class: "tl-text" }, assist ? [scorerName, assist] : [scorerName])
+            ]));
+          } else if (ev.kind === "goal") {
+            list.appendChild(el("div", { class: "tl-row tl-goal-them" }, [
+              el("span", { class: "tl-time" }, minLabel),
+              el("span", { class: "tl-icon" }, "⚽"),
+              el("span", { class: "tl-text muted" }, m.opponent || "Opponent")
+            ]));
+          } else {
+            list.appendChild(el("div", { class: "tl-row tl-sub" }, [
+              el("span", { class: "tl-time" }, minLabel),
+              el("span", { class: "tl-icon" }, "↔"),
+              el("span", { class: "tl-text" }, [
+                Store.playerName(ev.s.off),
+                el("span", { class: "tl-arrow" }, "→"),
+                Store.playerName(ev.s.on)
+              ])
+            ]));
+          }
+        }
+        timelineCard.appendChild(list);
+      }
+      root.appendChild(timelineCard);
+
+      // Lineup — kept but compact and last (it's context, not the story).
+      const lineup = el("section", { class: "card detail-section" }, [el("h3", null, "Lineup")]);
+      const lineupItem = (name, kind) => el("li", { class: "lineup-li" }, [
+        el("span", { class: "pinitial sm " + kind, "aria-hidden": "true" }, initialsOf(name)),
+        el("span", { class: "lineup-name" }, name)
+      ]);
+      const grid = el("div", { class: "lineup-grid" }, [
+        el("div", { class: "col" }, [
+          el("h4", null, "Starters"),
+          el("ul", { class: "clean" }, m.starters.map(id =>
+            lineupItem(Store.playerName(id), "starter")))
+        ]),
+        el("div", { class: "col" }, [
+          el("h4", null, "Bench"),
+          el("ul", { class: "clean" }, benchPlayers.map(p =>
+            lineupItem(p.name, "bench")))
+        ])
+      ]);
+      lineup.appendChild(grid);
+      root.appendChild(lineup);
     }
 
     /* ---------- Dashboard ---------- */
