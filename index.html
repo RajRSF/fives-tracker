@@ -1712,33 +1712,51 @@
         return activeSize > 0 ? sum / activeSize : 0;
       };
 
-      // The waterfall runs on cumPlayed (of active players only) to preserve
-      // the sum-of-targets invariant. Absence enters the math via two other
-      // levers: (1) absent players are excluded from `activeIds` so the
-      // fair-share pool this match is smaller, (2) the `deficit` column is
-      // computed against `baselineOf(pid)` — expected-given-attendance —
-      // instead of raw seasonAvg, so present players don't look "ahead"
-      // just because an absent teammate never accumulated minutes.
+      // The waterfall runs on DEVIATION from expected-given-attendance, not
+      // raw cumPlayed. This is the key absence fix (v1.4.3): a player who
+      // was absent has cumPlayed=0 AND expected=0, so their deviation is 0
+      // — they're on track, not "catching up." Without this, Ollie missing
+      // two matches makes the algorithm try to give him 25 mins in the next
+      // match to reach the raw squad average, which forces everyone else's
+      // target down. With this, everyone's target hovers near equalShare
+      // (100/8 ≈ 12.5) when the season is balanced-given-attendance.
+      //
+      // Sum invariant: sum(target) = plannedLength * OUTFIELD_COUNT across
+      // active players. The invariant preserves because we solve for the
+      // equalising deviation-after-target, then convert back to per-player
+      // minutes.
+      const deviationOf = (pid) => (cumPlayed.get(pid) || 0) - baselineOf(pid);
       const locked = new Map();
       const openSet = new Set(activeIds);
       for (let iter = 0; iter < activeSize + 1 && openSet.size > 0; iter++) {
         let usedLocked = 0;
         for (const v of locked.values()) usedLocked += v;
         const remaining = providable - usedLocked;
-        let sumCumOpen = 0;
-        for (const pid of openSet) sumCumOpen += (cumPlayed.get(pid) || 0);
-        const fairCumAfter = (sumCumOpen + remaining) / openSet.size;
+        let sumDevOpen = 0;
+        for (const pid of openSet) sumDevOpen += deviationOf(pid);
+        // After this match, every open player should end at the same
+        // deviation-from-expected. That target deviation is:
+        //   d* = (sumDevOpen + remaining - remaining) / openSet.size
+        //      = (sum of (cum[p] + target[p]) - sum of expected[p]) / n
+        // Rearranging: sum(target[p]) = remaining, and we want cum+target-exp
+        // equal across open players. Let d* = (sumDevOpen + remaining) / n
+        // is WRONG because targets contribute to future deviation.
+        // The correct equalising deviation after redistribution:
+        //   target[p] = d_final - deviationOf(p) + (matchShareTerm)
+        // Simpler: sum(target)=remaining constraint + all-equal-deviation-after
+        // gives target[p] = remaining/n + (avgDevOpen - deviationOf(p))
+        // where avgDevOpen = sumDevOpen / n.
+        const avgDevOpen = sumDevOpen / openSet.size;
+        const shareRemaining = remaining / openSet.size;
         const newlyLocked = [];
         for (const pid of openSet) {
-          const cum = cumPlayed.get(pid) || 0;
-          const rawT = fairCumAfter - cum;
+          const rawT = shareRemaining + (avgDevOpen - deviationOf(pid));
           if (rawT >= plannedLength) newlyLocked.push([pid, plannedLength]);
           else if (rawT <= 0)        newlyLocked.push([pid, 0]);
         }
         if (newlyLocked.length === 0) {
           for (const pid of openSet) {
-            const cum = cumPlayed.get(pid) || 0;
-            const rawT = fairCumAfter - cum;
+            const rawT = shareRemaining + (avgDevOpen - deviationOf(pid));
             locked.set(pid, Math.max(0, Math.min(plannedLength, rawT)));
           }
           openSet.clear();
