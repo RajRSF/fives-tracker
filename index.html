@@ -275,6 +275,26 @@
     background: #eaf6ee;
     border-color: var(--pitch);
   }
+  .pick-row.absent {
+    background: #f4f4f5;
+    border-color: #d4d4d8;
+    opacity: 0.75;
+    text-decoration: line-through;
+    text-decoration-color: rgba(0, 0, 0, 0.3);
+  }
+  .pick-row.absent .pinitial { opacity: 0.5; }
+  .dna-pill.absent {
+    background: #fef3c7;
+    border-color: #fcd34d;
+    color: #78350f;
+  }
+  .dash-sub {
+    display: block;
+    font-size: 0.72rem;
+    color: var(--ink-soft);
+    margin-top: 2px;
+    line-height: 1.2;
+  }
   .pick-row .role {
     font-size: 0.75rem;
     font-weight: 800;
@@ -445,7 +465,10 @@
   .dna-pill {
     background: #eef2f7; color: var(--muted);
     border-radius: 999px; padding: 3px 10px; font-size: 0.78rem;
+    border: 1px solid transparent;
   }
+  .dna-pill.tappable { cursor: pointer; }
+  .dna-pill.tappable:hover { border-color: rgba(0,0,0,0.15); }
 
   /* Timeline: unified goals + subs. Compact row per event, colour-coded on the
      left edge so scanning down the list separates own goals from opponent
@@ -1089,6 +1112,14 @@
         const toMin   = clampInt(toRaw, fromMin, matchCap, fromMin);
         return { playerId: String(g.playerId), fromMin: fromMin, toMin: toMin };
       }).filter(g => g.toMin > g.fromMin) : [];
+      // Absent list (v1.4.2, additive) — players marked as sick/holiday/no-show
+      // for this specific match. They're excluded from starters, subs, and the
+      // per-match target math (ISC-102). Absent from older matches means the
+      // whole squad was available.
+      const starterSet = new Set(m.starters);
+      const absentIds = Array.isArray(m.absentIds)
+        ? m.absentIds.map(String).filter(id => !starterSet.has(id))
+        : [];
       return {
         id:           m.id,
         opponent:     m.opponent,
@@ -1101,6 +1132,7 @@
         stats:        cleanStats,
         goals:        goals,
         goalieShifts: goalieShifts,
+        absentIds:    absentIds,
         createdAt:    typeof m.createdAt === "string" ? m.createdAt : new Date().toISOString()
       };
     }
@@ -1161,13 +1193,31 @@
         notify();
       }
     }
+    /**
+     * setMatchAbsence — retroactively edit who was marked absent for a saved
+     * match. Used when a player was absent from an older match that pre-dates
+     * the availability roster (v1.4.2). Absent players are removed from
+     * starters/subs guards implicitly by normaliseMatch (which filters out
+     * absentIds that also appear in starters — never a starter).
+     */
+    function setMatchAbsence(matchId, absentIds) {
+      const m = state.matches.find(x => x.id === matchId);
+      if (!m) return;
+      const starterSet = new Set(m.starters);
+      const validPlayers = new Set(state.players.map(p => p.id));
+      m.absentIds = (Array.isArray(absentIds) ? absentIds : [])
+        .map(String)
+        .filter(id => validPlayers.has(id) && !starterSet.has(id));
+      persist();
+      notify();
+    }
     function subscribe(fn) {
       listeners.add(fn);
       return () => listeners.delete(fn);
     }
 
     /* ---------- Live match ---------- */
-    function startLiveMatch({ opponent, date, matchLength, starters, keeperId }) {
+    function startLiveMatch({ opponent, date, matchLength, starters, keeperId, absentIds }) {
       if (!Array.isArray(starters) || starters.length !== STARTERS_COUNT) {
         throw new Error("startLiveMatch: must provide " + STARTERS_COUNT + " starters");
       }
@@ -1176,11 +1226,15 @@
       if (!keeperId || !starters.includes(keeperId)) {
         throw new Error("startLiveMatch: keeperId must be one of the 5 starters");
       }
+      const absent = Array.isArray(absentIds)
+        ? absentIds.filter(id => validIds.has(id) && !starters.includes(id))
+        : [];
       state.liveMatch = {
         opponent: (opponent || "").trim(),
         date: date || todayISO(),
         matchLength: clampInt(matchLength, MIN_LENGTH, MAX_LENGTH, DEFAULT_LENGTH),
         starters: starters.slice(),
+        absentIds: absent,
         startedAt: new Date().toISOString(),
         elapsedMs: 0,
         lastResumeAt: new Date().toISOString(),
@@ -1368,7 +1422,8 @@
         subs:         subs,
         stats:        stats,
         goals:        goals,
-        goalieShifts: goalieShifts
+        goalieShifts: goalieShifts,
+        absentIds:    Array.isArray(lm.absentIds) ? lm.absentIds.slice() : []
       });
       state.liveMatch = null;
       persist(); notify();
@@ -1406,7 +1461,7 @@
 
     return {
       load, getState, getPlayer, playerName,
-      updatePlayerName, addMatch, deleteMatch, subscribe,
+      updatePlayerName, addMatch, deleteMatch, setMatchAbsence, subscribe,
       // live
       startLiveMatch, getLive, liveElapsedMs, pauseLive, resumeLive,
       appendLiveEvent, removeLiveEvent, liveOnPitch,
@@ -1523,12 +1578,21 @@
    *   1. providable = plannedLength * OUTFIELD_COUNT
    *   2. Repeatedly:
    *        remaining = providable - sum(locked targets)
-   *        fairAfter = (sum(cumPlayed[unlocked]) + remaining) / count(unlocked)
-   *        For each unlocked p: raw = fairAfter - cum[p]
+   *        fairAfter = (sum(expectedCum[unlocked]) + remaining) / count(unlocked)
+   *        For each unlocked p: raw = fairAfter - expectedCum[p]
    *        Lock any raw >= plannedLength at plannedLength; any raw <= 0 at 0.
    *      until no new locks fire.
    *   3. Any leftover minutes (all remaining players would clamp) surface as
    *      an unallocated tail — flagged via `insufficient=true` on the result.
+   *
+   * Absence awareness (ISC-102, v1.4.2):
+   *   Players marked absent (sick/holiday/no-show) for a match are excluded
+   *   from that match's target math AND their season expectation is scaled
+   *   down by the matches they missed. "Expected cumulative" for player p
+   *   is not raw seasonAvg — it's the average per-appearance minutes across
+   *   the players who WERE available for those matches, times p's own
+   *   appearance count. That way Ollie missing two matches doesn't force
+   *   everyone else to give up time so his average catches up.
    * ======================================================================= */
   const SeasonEngine = (function () {
     /**
@@ -1551,57 +1615,131 @@
     }
 
     /**
+     * seasonAbsenceCount — per-player count of matches they were marked
+     * absent for. Older matches without absentIds contribute 0 to everyone
+     * (backwards-compat). Only counts absences from matches in `matches`.
+     */
+    function seasonAbsenceCount(matches, playerIds) {
+      const out = new Map();
+      for (const pid of playerIds) out.set(pid, 0);
+      for (const m of matches) {
+        const absent = Array.isArray(m.absentIds) ? m.absentIds : [];
+        for (const pid of absent) {
+          if (!out.has(pid)) continue;
+          out.set(pid, out.get(pid) + 1);
+        }
+      }
+      return out;
+    }
+
+    /**
+     * seasonExpectedMinutes — how many outfield minutes each player *should*
+     * have accumulated by now, given the matches they were available for.
+     *
+     * Idea: if the fair-share rate is R minutes per available player per
+     * match, then a player who was available for N matches has expected R*N.
+     * R is computed from the actual providable pool for each match divided
+     * by the number of available players that match — so absences reduce
+     * the denominator for that match's contribution.
+     *
+     * Returns Map<pid, expectedMinutes>.
+     */
+    function seasonExpectedMinutes(matches, playerIds) {
+      const expected = new Map();
+      for (const pid of playerIds) expected.set(pid, 0);
+      for (const m of matches) {
+        const absent = new Set(Array.isArray(m.absentIds) ? m.absentIds : []);
+        const availableCount = playerIds.filter(id => !absent.has(id)).length;
+        if (availableCount === 0) continue;
+        const providable = (m.matchLength || 0) * OUTFIELD_COUNT;
+        const share = providable / availableCount;
+        for (const pid of playerIds) {
+          if (absent.has(pid)) continue;
+          expected.set(pid, expected.get(pid) + share);
+        }
+      }
+      return expected;
+    }
+
+    /**
      * computeMatchTargets — how many minutes each player should play in the
      * upcoming/current match to move the season toward equal.
      *
-     * Uses waterfall projection so sum(target) == plannedLength * STARTERS_COUNT
-     * whenever physically achievable. See header comment for algorithm.
+     * Uses waterfall projection so sum(target over non-absent players) ==
+     * plannedLength * OUTFIELD_COUNT whenever physically achievable. See
+     * header comment for algorithm.
      *
-     * @returns Map<pid, { target, deficit, cumPlayed }>
-     *   The result also carries a hidden `_meta` entry with { insufficient,
-     *   unallocated } describing whether the season is too imbalanced to
-     *   redistribute in one match.
+     * Absent players get { target: null, deficit: null, absent: true }.
+     * They're excluded from the fair-share pool for this match.
+     *
+     * @param playerIds       full squad
+     * @param plannedLength   this match's planned length in minutes
+     * @param cumPlayed       Map<pid, minutes played this season so far>
+     * @param opts.absentIds  Array<pid> marked absent for this match
+     * @param opts.expected   Map<pid, expected minutes given attendance>
+     *                        (falls back to plain seasonAvg for legacy tests)
+     * @returns Map<pid, { target, deficit, cumPlayed, absent? }>
      */
-    function computeMatchTargets(playerIds, plannedLength, cumPlayed) {
+    function computeMatchTargets(playerIds, plannedLength, cumPlayed, opts) {
+      const absentIds = new Set((opts && opts.absentIds) || []);
+      const expected  = (opts && opts.expected) || null;
       const out = new Map();
-      const squadSize = playerIds.length;
-      if (squadSize === 0 || plannedLength <= 0) {
+
+      // Emit absent entries immediately; solve for the rest.
+      const activeIds = playerIds.filter(id => !absentIds.has(id));
+      const activeSize = activeIds.length;
+
+      if (activeSize === 0 || plannedLength <= 0) {
         for (const pid of playerIds) {
-          out.set(pid, { target: 0, deficit: 0, cumPlayed: cumPlayed.get(pid) || 0 });
+          if (absentIds.has(pid)) {
+            out.set(pid, { target: null, deficit: null, cumPlayed: cumPlayed.get(pid) || 0, absent: true });
+          } else {
+            out.set(pid, { target: 0, deficit: 0, cumPlayed: cumPlayed.get(pid) || 0 });
+          }
         }
         out.set("_meta", { insufficient: false, unallocated: 0 });
         return out;
       }
       const providable = plannedLength * OUTFIELD_COUNT;
 
-      // Working state: each player either locked (final target set) or open (still being solved).
-      const locked = new Map();     // pid → target
-      const openSet = new Set(playerIds);
+      // Baseline for deficit calc: expected-given-attendance (preferred) or
+      // plain seasonAvg over active players.
+      const baselineOf = (pid) => {
+        if (expected && expected.has(pid)) return expected.get(pid);
+        // Fallback: average cumPlayed across active players (legacy path).
+        let sum = 0;
+        for (const id of activeIds) sum += (cumPlayed.get(id) || 0);
+        return activeSize > 0 ? sum / activeSize : 0;
+      };
 
-      // Waterfall: keep locking clampers and redistributing until quiescent.
-      // Bound iterations at squadSize to guarantee termination.
-      for (let iter = 0; iter < squadSize + 1 && openSet.size > 0; iter++) {
+      // The waterfall runs on cumPlayed (of active players only) to preserve
+      // the sum-of-targets invariant. Absence enters the math via two other
+      // levers: (1) absent players are excluded from `activeIds` so the
+      // fair-share pool this match is smaller, (2) the `deficit` column is
+      // computed against `baselineOf(pid)` — expected-given-attendance —
+      // instead of raw seasonAvg, so present players don't look "ahead"
+      // just because an absent teammate never accumulated minutes.
+      const locked = new Map();
+      const openSet = new Set(activeIds);
+      for (let iter = 0; iter < activeSize + 1 && openSet.size > 0; iter++) {
         let usedLocked = 0;
         for (const v of locked.values()) usedLocked += v;
         const remaining = providable - usedLocked;
-
         let sumCumOpen = 0;
         for (const pid of openSet) sumCumOpen += (cumPlayed.get(pid) || 0);
-        const fairAfter = (sumCumOpen + remaining) / openSet.size;
-
+        const fairCumAfter = (sumCumOpen + remaining) / openSet.size;
         const newlyLocked = [];
         for (const pid of openSet) {
           const cum = cumPlayed.get(pid) || 0;
-          const raw = fairAfter - cum;
-          if (raw >= plannedLength) newlyLocked.push([pid, plannedLength]);
-          else if (raw <= 0)        newlyLocked.push([pid, 0]);
+          const rawT = fairCumAfter - cum;
+          if (rawT >= plannedLength) newlyLocked.push([pid, plannedLength]);
+          else if (rawT <= 0)        newlyLocked.push([pid, 0]);
         }
         if (newlyLocked.length === 0) {
-          // No new clamps — assign the current fair share to every open player.
           for (const pid of openSet) {
             const cum = cumPlayed.get(pid) || 0;
-            const raw = fairAfter - cum;
-            locked.set(pid, Math.max(0, Math.min(plannedLength, raw)));
+            const rawT = fairCumAfter - cum;
+            locked.set(pid, Math.max(0, Math.min(plannedLength, rawT)));
           }
           openSet.clear();
           break;
@@ -1612,24 +1750,18 @@
         }
       }
 
-      // Emit rounded targets and compute the true unallocated tail (using
-      // *unrounded* locks so we detect physical impossibility, not rounding).
+      // Emit rounded targets and compute the true unallocated tail.
       let sumLocked = 0;
       for (const v of locked.values()) sumLocked += v;
       const unallocatedUnrounded = Math.max(0, providable - sumLocked);
-      const insufficient = unallocatedUnrounded > 0.5;   // >0.5 min = real gap, not rounding
-      let seasonAvgSum = 0;
-      for (const pid of playerIds) seasonAvgSum += (cumPlayed.get(pid) || 0);
-      const seasonAvg = seasonAvgSum / squadSize;
+      const insufficient = unallocatedUnrounded > 0.5;
 
       // Rounded distribution with residual-carry so integer sum equals the
       // unrounded sum (prevents "16+16+16+... = 128 for a 125-min match").
-      const ids = playerIds.slice();
-      const floats = ids.map(pid => locked.get(pid) || 0);
+      const floats = activeIds.map(pid => locked.get(pid) || 0);
       const rounded = floats.map(v => Math.floor(v));
       let deficitLeft = Math.round(floats.reduce((a, b) => a + b, 0)) - rounded.reduce((a, b) => a + b, 0);
-      // Distribute the +1s to the largest fractional parts first (standard largest-remainder).
-      const fracOrder = ids
+      const fracOrder = activeIds
         .map((pid, i) => ({ i, frac: floats[i] - Math.floor(floats[i]), pid }))
         .sort((a, b) => (b.frac - a.frac) || (a.pid < b.pid ? -1 : 1));
       for (let k = 0; k < fracOrder.length && deficitLeft > 0; k++) {
@@ -1639,12 +1771,19 @@
         }
       }
 
-      for (let i = 0; i < ids.length; i++) {
-        const pid = ids[i];
+      // Emit — absent players first (target: null), then active with rounded targets.
+      for (const pid of playerIds) {
+        if (absentIds.has(pid)) {
+          out.set(pid, { target: null, deficit: null, cumPlayed: cumPlayed.get(pid) || 0, absent: true });
+        }
+      }
+      for (let i = 0; i < activeIds.length; i++) {
+        const pid = activeIds[i];
         const cum = cumPlayed.get(pid) || 0;
+        const base = baselineOf(pid);
         out.set(pid, {
           target: rounded[i],
-          deficit: Math.round(seasonAvg - cum),
+          deficit: Math.round(base - cum),
           cumPlayed: cum
         });
       }
@@ -1662,6 +1801,7 @@
       let mostAhead = null;  // largest negative deficit (smallest number)
       for (const [pid, t] of targets.entries()) {
         if (pid === "_meta") continue;  // ignore metadata sentinel
+        if (!t || t.deficit === null || t.deficit === undefined) continue; // absent players skipped
         if (t.deficit > 0 && (!mostOwed || t.deficit > mostOwed.deficit || (t.deficit === mostOwed.deficit && pid < mostOwed.pid))) {
           mostOwed = { pid, deficit: t.deficit };
         }
@@ -1675,7 +1815,13 @@
       };
     }
 
-    return { seasonCumulativeMinutes, computeMatchTargets, markPlayers };
+    return {
+      seasonCumulativeMinutes,
+      seasonAbsenceCount,
+      seasonExpectedMinutes,
+      computeMatchTargets,
+      markPlayers
+    };
   })();
 
   /* =========================================================================
@@ -1720,6 +1866,11 @@
         matchLength: DEFAULT_LENGTH,
         starters:    [],
         keeperId:    "",
+        // Players marked absent for this match (sick, holiday, no-show).
+        // Absent players can't be starters or subs, and their season target
+        // math doesn't get penalised — see SeasonEngine (ISC-102). Empty on
+        // fresh setup; the coach can toggle from the setup screen.
+        absentIds:   [],
         showForm:    false,
         errors:      []
       };
@@ -2391,6 +2542,8 @@
         // Errors surface on submit attempt; the DOM already reflects the typed value.
       },
       toggleStarter(pid) {
+        // Absent players can't be starters — silently no-op.
+        if ((liveSetup.absentIds || []).includes(pid)) return;
         const idx = liveSetup.starters.indexOf(pid);
         if (idx >= 0) {
           liveSetup.starters.splice(idx, 1);
@@ -2398,6 +2551,21 @@
           if (liveSetup.keeperId === pid) liveSetup.keeperId = "";
         } else if (liveSetup.starters.length < STARTERS_COUNT) {
           liveSetup.starters.push(pid);
+        }
+        recomputeLiveSetupErrors();
+        render();
+      },
+      toggleAbsent(pid) {
+        if (!Array.isArray(liveSetup.absentIds)) liveSetup.absentIds = [];
+        const idx = liveSetup.absentIds.indexOf(pid);
+        if (idx >= 0) {
+          liveSetup.absentIds.splice(idx, 1);
+        } else {
+          liveSetup.absentIds.push(pid);
+          // Marking someone absent removes them from starters + keeper picks.
+          const sIdx = liveSetup.starters.indexOf(pid);
+          if (sIdx >= 0) liveSetup.starters.splice(sIdx, 1);
+          if (liveSetup.keeperId === pid) liveSetup.keeperId = "";
         }
         recomputeLiveSetupErrors();
         render();
@@ -2417,7 +2585,8 @@
           date:        f.date,
           matchLength: clampInt(f.matchLength, MIN_LENGTH, MAX_LENGTH, DEFAULT_LENGTH),
           starters:    f.starters.slice(),
-          keeperId:    f.keeperId
+          keeperId:    f.keeperId,
+          absentIds:   Array.isArray(f.absentIds) ? f.absentIds.slice() : []
         });
         liveSetup = newLiveSetup();
         livePicker = null;
@@ -3292,15 +3461,44 @@
           }))
       ]);
       statsCard.appendChild(tbl);
-      // Did-not-appear pill row nested inside the stats card — same context,
-      // no dedicated section overhead.
-      if (noShow.length > 0) {
+
+      // Availability split — tapping a chip toggles absent/present. Absent
+      // players don't get penalised in the fair-share math (ISC-102);
+      // "Did not appear" means present but not selected (bench + never subbed).
+      const absentSetMatch = new Set(Array.isArray(m.absentIds) ? m.absentIds : []);
+      const absentPlayers = noShow.filter(p => absentSetMatch.has(p.id));
+      const dnaPlayers    = noShow.filter(p => !absentSetMatch.has(p.id));
+      const toggleAbsentInSaved = (pid) => {
+        const current = new Set(Array.isArray(m.absentIds) ? m.absentIds : []);
+        if (current.has(pid)) current.delete(pid);
+        else current.add(pid);
+        Store.setMatchAbsence(m.id, Array.from(current));
+      };
+      if (absentPlayers.length > 0) {
+        statsCard.appendChild(el("div", { class: "muted small", style: "margin: 8px 0 4px;" }, "Absent"));
+        statsCard.appendChild(el("div", { class: "dna-row" },
+          absentPlayers.map(p => el("span", {
+            class: "dna-pill absent tappable",
+            role: "button",
+            tabindex: "0",
+            title: "Tap to mark as present (moves to Did not appear)",
+            onClick: () => toggleAbsentInSaved(p.id)
+          }, "🚫 " + p.name))
+        ));
+      }
+      if (dnaPlayers.length > 0) {
         statsCard.appendChild(el("div", {
           class: "muted small",
           style: "margin: 8px 0 4px;"
         }, "Did not appear"));
         statsCard.appendChild(el("div", { class: "dna-row" },
-          noShow.map(p => el("span", { class: "dna-pill" }, p.name))
+          dnaPlayers.map(p => el("span", {
+            class: "dna-pill tappable",
+            role: "button",
+            tabindex: "0",
+            title: "Tap to mark as absent for this match",
+            onClick: () => toggleAbsentInSaved(p.id)
+          }, p.name))
         ));
       }
       root.appendChild(statsCard);
@@ -3409,12 +3607,13 @@
       const s = Store.getState();
       const totals = new Map();
       for (const p of s.players) {
-        totals.set(p.id, { id: p.id, matches: 0, minutes: 0, goals: 0, assists: 0 });
+        totals.set(p.id, { id: p.id, matches: 0, minutes: 0, goals: 0, assists: 0, absent: 0 });
       }
       for (const m of s.matches) {
         const minutes = MinutesEngine.computeMinutesByPlayer(m.starters, m.subs, m.matchLength, m.goalieShifts);
         const goalieMins = MinutesEngine.goalieMinutesByPlayer(m.goalieShifts, m.matchLength);
         const appeared = MinutesEngine.summariseAppearances(m);
+        const absentSet = new Set(Array.isArray(m.absentIds) ? m.absentIds : []);
         for (const p of s.players) {
           const t = totals.get(p.id);
           const min = minutes.get(p.id) || 0;
@@ -3424,6 +3623,7 @@
           // starter who spent the entire match in goal still counts.
           if (appeared.has(p.id) && (min > 0 || gMin > 0)) t.matches += 1;
           t.minutes += min;
+          if (absentSet.has(p.id)) t.absent += 1;
           const st = m.stats[p.id];
           if (st) {
             t.goals   += (st.goals   || 0);
@@ -3467,13 +3667,22 @@
             el("th", { class: "num", onClick: () => setSort("assists") }, [el("span", { class: "arrow" }, arrow("assists")), " A"])
           ])
         ]),
-        el("tbody", null, rows.map(r => el("tr", null, [
-          el("td", null, r.name),
-          el("td", { class: "num" }, String(r.matches)),
-          el("td", { class: "num" }, String(r.minutes)),
-          el("td", { class: "num" }, String(r.goals)),
-          el("td", { class: "num" }, String(r.assists))
-        ])))
+        el("tbody", null, rows.map(r => {
+          const nameCell = r.absent > 0
+            ? el("td", null, [
+                el("div", null, r.name),
+                el("span", { class: "dash-sub" },
+                  "🚫 Absent " + r.absent + " match" + (r.absent === 1 ? "" : "es"))
+              ])
+            : el("td", null, r.name);
+          return el("tr", null, [
+            nameCell,
+            el("td", { class: "num" }, String(r.matches)),
+            el("td", { class: "num" }, String(r.minutes)),
+            el("td", { class: "num" }, String(r.goals)),
+            el("td", { class: "num" }, String(r.assists))
+          ]);
+        }))
       ]);
       card.appendChild(tbl);
       if (s.matches.length === 0) {
@@ -3502,7 +3711,33 @@
         ])
       ]));
 
-      // Starter picker
+      // Availability — mark anyone who can't play today (sick, holiday). Absent
+      // players are excluded from starters + keeper picks and don't get
+      // penalised in the fair-share target math (ISC-102).
+      const absentSet = new Set(Array.isArray(f.absentIds) ? f.absentIds : []);
+      const availableCount = players.length - absentSet.size;
+      root.appendChild(el("div", { class: "field" }, [
+        el("label", null, [
+          "Availability ",
+          el("span", { class: "muted" }, availableCount + " available")
+        ])
+      ]));
+      const availGrid = el("div", { class: "picker live-picker" });
+      players.forEach((p) => {
+        const isAbsent = absentSet.has(p.id);
+        availGrid.appendChild(el("button", {
+          type: "button",
+          class: "pick-row" + (isAbsent ? " absent" : ""),
+          onClick: () => api.toggleAbsent(p.id)
+        }, [
+          el("span", { class: "pinitial sm " + (isAbsent ? "bench" : "starter"), "aria-hidden": "true" }, initialsOf(p.name)),
+          el("span", { class: "grow" }, p.name),
+          el("span", { class: "muted" }, isAbsent ? "🚫 Absent" : "Available")
+        ]));
+      });
+      root.appendChild(availGrid);
+
+      // Starter picker — only shows available players.
       root.appendChild(el("div", { class: "field" }, [
         el("label", null, [
           "Starters ",
@@ -3510,7 +3745,7 @@
         ])
       ]));
       const grid = el("div", { class: "picker live-picker" });
-      players.forEach((p) => {
+      players.filter(p => !absentSet.has(p.id)).forEach((p) => {
         const isStarter = f.starters.includes(p.id);
         grid.appendChild(el("button", {
           type: "button",
@@ -3708,11 +3943,13 @@
       // yet). Playing time this match counts toward the visible progress via
       // `playMs`, not toward the season total until end-match commits.
       const allPlayerIds = players.map(p => p.id);
-      const cumPlayed = SeasonEngine.seasonCumulativeMinutes(
-        Store.getState().matches, allPlayerIds
-      );
+      const savedMatches = Store.getState().matches;
+      const cumPlayed = SeasonEngine.seasonCumulativeMinutes(savedMatches, allPlayerIds);
+      const expected  = SeasonEngine.seasonExpectedMinutes(savedMatches, allPlayerIds);
+      const absentThisMatch = Array.isArray(lm.absentIds) ? lm.absentIds : [];
       const targets = SeasonEngine.computeMatchTargets(
-        allPlayerIds, lm.matchLength || DEFAULT_LENGTH, cumPlayed
+        allPlayerIds, lm.matchLength || DEFAULT_LENGTH, cumPlayed,
+        { absentIds: absentThisMatch, expected: expected }
       );
       const targetMeta = targets.get("_meta") || { insufficient: false, unallocated: 0 };
       if (targetMeta.insufficient && targetMeta.unallocated > 0) {
@@ -3780,11 +4017,12 @@
       onPitchCard.appendChild(onPitchGrid);
       root.appendChild(onPitchCard);
 
+      const absentSetLive = new Set(absentThisMatch);
       const benchCard = el("section", { class: "card" }, [
         el("div", { class: "live-section-title" }, "Bench")
       ]);
       const benchGrid = el("div", { class: "live-roster-grid" });
-      players.filter(p => !onPitch.has(p.id)).forEach((p) => {
+      players.filter(p => !onPitch.has(p.id) && !absentSetLive.has(p.id)).forEach((p) => {
         const armed = pitchFirstSub;             // asking the coach to pick on-player
         const preselected = preselectedOn === p.id;
         benchGrid.appendChild(buildLiveRow(p, "B", playMs.get(p.id) || 0, stats[p.id], "on-bench", {
@@ -3798,6 +4036,15 @@
         }));
       });
       benchCard.appendChild(benchGrid);
+      // Absent-today strip — small pills under the bench so the coach can
+      // see at a glance who isn't part of today's rotation.
+      const absentPlayers = players.filter(p => absentSetLive.has(p.id));
+      if (absentPlayers.length > 0) {
+        benchCard.appendChild(el("div", { class: "muted small", style: "margin: 8px 0 4px;" }, "Absent today"));
+        benchCard.appendChild(el("div", { class: "dna-row" },
+          absentPlayers.map(p => el("span", { class: "dna-pill absent" }, "🚫 " + p.name))
+        ));
+      }
       root.appendChild(benchCard);
 
       // Undo toast — sticky at bottom for 5s after a sub commits.
@@ -3894,7 +4141,7 @@
      * match math (see liveMillisecondsByPlayer subtraction, ISC-80).
      */
     function buildTargetChip(playedMs, target, starred, paused) {
-      if (!target) return el("span", { class: "ptarget none" }, "");
+      if (!target || target.target === null) return el("span", { class: "ptarget none" }, "");
       const playedMin = Math.floor(playedMs / 60000);
       const owed = target.target - playedMin;      // positive = still owed, negative = over
       let text;
